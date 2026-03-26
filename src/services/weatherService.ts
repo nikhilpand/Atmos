@@ -10,26 +10,53 @@ let aiCooldownUntil = 0;
 export async function fetchWeather(lat: number, lon: number): Promise<WeatherData> {
   let response;
   try {
-    response = await fetch(`/api/weather?lat=${lat}&lon=${lon}`);
+    // Direct call to Open-Meteo for static hosting compatibility
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,rain,showers,snowfall,weather_code,cloud_cover,pressure_msl,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m&hourly=temperature_2m,weather_code,visibility,uv_index&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max&minutely_15=precipitation&timezone=auto`;
+    response = await fetch(url);
   } catch (e) {
     throw new Error(`Network error: Failed to connect to weather API. ${e instanceof Error ? e.message : ''}`);
   }
   
   if (!response.ok) {
-    let errorMsg = 'Failed to fetch weather data';
-    try {
-      const errorData = await response.json();
-      errorMsg = errorData.error || errorMsg;
-    } catch (e) {}
-    throw new Error(errorMsg);
+    throw new Error('Failed to fetch weather data');
   }
 
   const data = await response.json();
 
-  // Fetch Air Quality Data via Proxy
+  // Map Open-Meteo weather codes to AccuWeather-style codes used in the frontend
+  const mapWeatherCode = (code: number, isDay: boolean) => {
+    if (code === 0) return isDay ? 1 : 33; // Clear
+    if (code === 1 || code === 2) return isDay ? 2 : 34; // Mostly Sunny / Clear
+    if (code === 3) return isDay ? 7 : 38; // Cloudy
+    if (code >= 45 && code <= 48) return 11; // Fog
+    if (code >= 51 && code <= 55) return 12; // Drizzle/Showers
+    if (code >= 56 && code <= 57) return 26; // Freezing Drizzle
+    if (code >= 61 && code <= 65) return 18; // Rain
+    if (code >= 66 && code <= 67) return 26; // Freezing Rain
+    if (code >= 71 && code <= 77) return 22; // Snow
+    if (code >= 80 && code <= 82) return 12; // Rain Showers
+    if (code >= 85 && code <= 86) return 22; // Snow Showers
+    if (code >= 95) return 15; // Thunderstorm
+    return isDay ? 1 : 33;
+  };
+
+  const isDay = data.current.is_day === 1;
+  const currentCode = mapWeatherCode(data.current.weather_code, isDay);
+
+  // Simple moon phase calculation
+  const getMoonPhase = (date: Date) => {
+    const lp = 2551443 * 1000; 
+    const now = date.getTime();
+    const new_moon = new Date('1970-01-07T20:35:00Z').getTime();
+    const phase = ((now - new_moon) % lp) / lp;
+    return phase; // 0 to 1
+  };
+
+  // Fetch Air Quality Data directly
   let airQuality;
   try {
-    const aqRes = await fetch(`/api/air-quality?lat=${lat}&lon=${lon}`);
+    const aqUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=european_aqi,pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,ozone`;
+    const aqRes = await fetch(aqUrl);
     if (aqRes.ok) {
       const aqData = await aqRes.json();
       if (aqData) {
@@ -49,43 +76,56 @@ export async function fetchWeather(lat: number, lon: number): Promise<WeatherDat
 
   return {
     current: {
-      temp: Math.round(data.current.Temperature.Metric.Value),
-      condition: data.current.WeatherText,
-      conditionCode: data.current.WeatherIcon,
-      precipitation: data.current.PrecipitationSummary?.Precipitation?.Metric?.Value || 0,
-      uvIndex: data.current.UVIndex || 0,
-      humidity: data.current.RelativeHumidity || 0,
-      dewPoint: Math.round(data.current.DewPoint?.Metric?.Value || 0),
-      windSpeed: Math.round(data.current.Wind?.Speed?.Metric?.Value || 0),
-      windDirection: getWindDirection(data.current.Wind?.Direction?.Degrees || 0),
-      gusts: Math.round(data.current.WindGust?.Speed?.Metric?.Value || 0),
-      pressure: Math.round(data.current.Pressure?.Metric?.Value || 0),
-      visibility: Math.round(data.current.Visibility?.Metric?.Value || 0),
+      temp: Math.round(data.current.temperature_2m),
+      condition: "Atmospheric Condition", 
+      conditionCode: currentCode,
+      precipitation: data.current.precipitation || 0,
+      uvIndex: data.hourly.uv_index[0] || 0,
+      humidity: data.current.relative_humidity_2m || 0,
+      dewPoint: Math.round(data.current.apparent_temperature || 0),
+      windSpeed: Math.round(data.current.wind_speed_10m || 0),
+      windDirection: getWindDirection(data.current.wind_direction_10m || 0),
+      gusts: Math.round(data.current.wind_gusts_10m || 0),
+      pressure: Math.round(data.current.pressure_msl || 0),
+      visibility: Math.round(data.hourly.visibility[0] / 1000 || 10),
     },
     airQuality,
     hourly: {
-      time: data.hourly.map((h: any) => h.DateTime),
-      temp: data.hourly.map((h: any) => Math.round(h.Temperature.Value)),
-      conditionCode: data.hourly.map((h: any) => h.WeatherIcon),
+      time: data.hourly.time,
+      temp: data.hourly.temperature_2m.map((t: number) => Math.round(t)),
+      conditionCode: data.hourly.weather_code.map((c: number) => mapWeatherCode(c, true)),
     },
     daily: {
-      time: data.daily.DailyForecasts.map((d: any) => d.Date),
-      tempMax: data.daily.DailyForecasts.map((d: any) => Math.round(d.Temperature.Maximum.Value)),
-      tempMin: data.daily.DailyForecasts.map((d: any) => Math.round(d.Temperature.Minimum.Value)),
-      conditionCode: data.daily.DailyForecasts.map((d: any) => d.Day.Icon),
-      precipitationProbability: data.daily.DailyForecasts.map((d: any) => Math.max(d.Day.PrecipitationProbability || 0, d.Night.PrecipitationProbability || 0)),
+      time: data.daily.time,
+      tempMax: data.daily.temperature_2m_max.map((t: number) => Math.round(t)),
+      tempMin: data.daily.temperature_2m_min.map((t: number) => Math.round(t)),
+      conditionCode: data.daily.weather_code.map((c: number) => mapWeatherCode(c, true)),
+      precipitationProbability: data.daily.precipitation_probability_max,
     },
-    astronomy: data.astronomy,
-    minutely: data.minutely,
+    astronomy: {
+      sunrise: data.daily.sunrise[0],
+      sunset: data.daily.sunset[0],
+      moonPhase: getMoonPhase(new Date()),
+      stargazingIndex: Math.max(0, 100 - (data.current.cloud_cover || 0)),
+      uvIndexMax: data.daily.uv_index_max[0] || 0
+    },
+    minutely: {
+      time: data.minutely_15.time,
+      precipitation: data.minutely_15.precipitation
+    },
   };
 }
 
 export async function searchLocations(query: string): Promise<Location[]> {
   if (!query) return [];
-  const url = `/api/locations?q=${encodeURIComponent(query)}`;
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5`;
   let response;
   try {
-    response = await fetch(url);
+    response = await fetch(url, {
+      headers: {
+        'User-Agent': 'AtmosWeatherApp/1.0'
+      }
+    });
   } catch (e) {
     console.error('Network error during location search:', e);
     return [];
