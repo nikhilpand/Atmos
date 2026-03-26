@@ -1,0 +1,5 @@
+{
+  "name": "ATMOS | Atmospheric Intelligence",
+  "description": "A cinematic, high-fidelity weather application providing real-time atmospheric insights and advanced forecasting.",
+  "requestFramePermissions": ["geolocation"]
+}
