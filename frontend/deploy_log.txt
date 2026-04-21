@@ -1,0 +1,8 @@
+Retrieving project…
+Deploying nkp9450732628-8260s-projects/frontend
+Uploading [--------------------] (0.0B/253.4KB)
+Uploading [=====---------------] (74.1KB/253.4KB)
+Uploading [==========----------] (128.9KB/253.4KB)
+Uploading [================----] (205.8KB/253.4KB)
+Uploading [====================] (253.4KB/253.4KB)
+Error: DeploymentError: An unexpected internal error occurred

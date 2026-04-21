@@ -32,12 +32,6 @@ from fastapi.responses import JSONResponse, StreamingResponse, Response
 from contextlib import asynccontextmanager
 
 try:
-    from .scraper import extract_m3u8, init_browser, close_browser
-except ImportError:
-    # Handle direct run
-    from scraper import extract_m3u8, init_browser, close_browser
-
-try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
@@ -59,14 +53,7 @@ CORS_ORIGINS = os.environ.get(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    try:
-        await init_browser()
-    except Exception as e:
-        print(f"Failed to initialize Playwright: {e}")
     yield
-    # Shutdown
-    await close_browser()
 
 app = FastAPI(title="ATMOS Media Server", version="1.0.0", lifespan=lifespan)
 app.add_middleware(
@@ -225,61 +212,8 @@ def health_check():
         "ffmpeg": ffmpeg_ok,
         "ffprobe": ffprobe_ok,
         "drive_configured": drive_ok,
-        "playwright_extractor": True,
         "version": "1.0.0",
     }
-
-# ═══════════════════════════════════════════════════════════════════
-#  ENDPOINT: Zero-Storage Playwright Extractor
-# ═══════════════════════════════════════════════════════════════════
-
-# Concurrency limits and basic LRU Cache for extracted streams
-_extract_semaphore = asyncio.Semaphore(5)
-_extract_cache = OrderedDict()
-_EXTRACT_CACHE_MAX = 100
-
-@app.get("/extract/{tmdb_id}")
-async def extract_stream(
-    tmdb_id: str,
-    media_type: str = Query("movie", description="movie or tv"),
-    season: int = Query(1),
-    episode: int = Query(1)
-):
-    """
-    Zero-storage extraction pipeline. 
-    Intercepts .m3u8 stream links using Playwright from aggregator sites.
-    """
-    if not re.match(r'^[a-zA-Z0-9_-]+$', tmdb_id):
-        return JSONResponse({"status": "error", "error": "Invalid TMDB ID format"}, status_code=400)
-
-    is_tv = (media_type.lower() == "tv")
-    cache_key = f"{tmdb_id}_{is_tv}_{season}_{episode}"
-    
-    # Check LRU cache first
-    if cache_key in _extract_cache:
-        url, timestamp = _extract_cache[cache_key]
-        # Valid for 6 hours
-        if time.time() - timestamp < 21600:
-            _extract_cache.move_to_end(cache_key)
-            return JSONResponse({"status": "success", "stream_url": url, "cached": True})
-        else:
-            del _extract_cache[cache_key]
-
-    # Process extraction with Semaphore limit
-    async with _extract_semaphore:
-        try:
-            url = await extract_m3u8(tmdb_id, is_tv, season, episode)
-            if url:
-                # Update Cache
-                _extract_cache[cache_key] = (url, time.time())
-                if len(_extract_cache) > _EXTRACT_CACHE_MAX:
-                    _extract_cache.popitem(last=False)
-                    
-                return JSONResponse({"status": "success", "stream_url": url, "cached": False})
-            else:
-                return JSONResponse({"status": "error", "error": "Extraction failed. No stream found."}, status_code=404)
-        except Exception as e:
-            return JSONResponse({"status": "error", "error": str(e)}, status_code=500)
 
 
 

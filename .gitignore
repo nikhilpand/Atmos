@@ -16,6 +16,10 @@ dist/
 build/
 *.egg
 *.db
+test_env/
+venv/
+.venv/
+env/
 
 # ─── Node / Next.js ───
 node_modules/
@@ -31,6 +35,8 @@ downloads/
 *.tmp
 queue_state.json
 analytics.json
+*.mp4
+*.mkv
 
 # ─── IDE ───
 .vscode/
