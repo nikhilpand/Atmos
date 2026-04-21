@@ -1,0 +1,34 @@
+# ─── Secrets & Credentials (NEVER COMMIT in production) ───
+# User wants to push these during dev
+# *.session
+# :memory:.session
+# token.json
+# cookies.json
+# cookies.txt
+# .env
+# .env.*
+# !.env.example
+# ─── Python ───
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ─── Downloads ───
+downloads/
+*.tmp
+queue_state.json
+analytics.json
+
+# ─── IDE ───
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ─── OS ───
+.DS_Store
+Thumbs.db
+__pycache__/
