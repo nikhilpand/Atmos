@@ -36,7 +36,7 @@ jobs:
             # Remove any existing .git directory to start fresh
             rm -rf .git
             
-            git init
+            git init -b main
             git add .
             git commit -m "Auto-deploy from GitHub Actions: ${{ github.sha }}"
             git push --force "https://nikhil1776:${HF_TOKEN}@huggingface.co/spaces/${SPACE}" main
