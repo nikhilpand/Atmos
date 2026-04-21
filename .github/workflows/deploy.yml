@@ -1,0 +1,53 @@
+name: Deploy Backend to Hugging Face
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'hf_repo/**'
+      - 'media_server/**'
+      - 'meta_server/**'
+      - 'subs_server/**'
+      - '.github/workflows/deploy.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Hugging Face Spaces
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+          # Function to deploy a directory to a Hugging Face Space
+          deploy_to_hf() {
+            local DIR=$1
+            local SPACE=$2
+            
+            echo "Deploying $DIR to $SPACE..."
+            cd "$DIR"
+            
+            # Remove any existing .git directory to start fresh
+            rm -rf .git
+            
+            git init
+            git add .
+            git commit -m "Auto-deploy from GitHub Actions: ${{ github.sha }}"
+            git push --force "https://nikhil1776:${HF_TOKEN}@huggingface.co/spaces/${SPACE}" main
+            
+            cd ..
+            echo "Successfully deployed $DIR"
+            echo "----------------------------------------"
+          }
+
+          # Deploy each microservice
+          deploy_to_hf "hf_repo"      "nikhil1776/gdrivefwd"
+          deploy_to_hf "media_server" "nikhil1776/atmos-media"
+          deploy_to_hf "meta_server"  "nikhil1776/atmos-meta"
+          deploy_to_hf "subs_server"  "nikhil1776/atmos-subs"
