@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <title>ATMOS — Stream Your Universe</title>
+    <meta name="description" content="ATMOS — Premium cinematic streaming from your personal cloud library.">
+    <meta name="theme-color" content="#050814">
+
+    <!-- Preconnect -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <!-- Vidstack Player -->
+    <link rel="stylesheet" href="https://cdn.vidstack.io/player/theme.css" />
+    <link rel="stylesheet" href="https://cdn.vidstack.io/player/video.css" />
+    <script type="module" src="https://cdn.vidstack.io/player"></script>
+
+    <!-- GSAP for splash animation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+    <!-- App CSS -->
+    <link rel="stylesheet" href="style.css?v=8.0">
+
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
+</head>
+<body>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  CINEMATIC SPLASH — Lens Flare Logo Reveal                -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <div id="splash-overlay" class="splash-overlay">
+        <canvas id="splash-canvas"></canvas>
+        <div class="splash-content">
+            <div class="splash-logo" id="splash-logo">
+                <span class="splash-letter" data-i="0">A</span>
+                <span class="splash-letter" data-i="1">T</span>
+                <span class="splash-letter" data-i="2">M</span>
+                <span class="splash-letter" data-i="3">O</span>
+                <span class="splash-letter" data-i="4">S</span>
+            </div>
+            <div class="splash-flare" id="splash-flare"></div>
+            <p class="splash-tagline" id="splash-tagline">Stream Your Universe</p>
+        </div>
+        <button class="splash-skip" id="splash-skip">Skip <span>→</span></button>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  AMBIENT CANVAS BACKGROUND                                 -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <canvas id="ambient-canvas" class="ambient-canvas"></canvas>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  NAVIGATION                                                -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <nav class="nav" id="main-nav">
+        <div class="nav-left">
+            <button class="nav-hamburger" id="nav-hamburger" aria-label="Menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-brand">ATMOS</div>
+        </div>
+        <div class="nav-links" id="nav-links">
+            <a href="index.html" id="nav-home">Home</a>
+            <a href="#" data-section="movies" id="nav-movies">Movies</a>
+            <a href="#" data-section="shows" id="nav-shows">TV Shows</a>
+            <a href="personal.html" class="active" id="nav-personal">Personal Drive</a>
+            <a href="#" data-section="mylist" id="nav-mylist">My List</a>
+        </div>
+        <div class="nav-right">
+            <div class="nav-search" id="nav-search-container">
+                <button class="search-toggle" id="search-toggle" aria-label="Search">
+                    <i data-lucide="search"></i>
+                </button>
+                <input type="text" id="search-input" placeholder="Search titles..." autocomplete="off" class="search-collapsed">
+            </div>
+        </div>
+    </nav>
+
+    <!-- Mobile Nav Overlay -->
+    <div class="mobile-nav-overlay" id="mobile-nav-overlay">
+        <div class="mobile-nav-content">
+            <a href="index.html" class="mobile-nav-link">Home</a>
+            <a href="#" data-section="movies" class="mobile-nav-link">Movies</a>
+            <a href="#" data-section="shows" class="mobile-nav-link">TV Shows</a>
+            <a href="personal.html" class="mobile-nav-link active">Personal Drive</a>
+            <a href="#" data-section="mylist" class="mobile-nav-link">My List</a>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  BILLBOARD / HERO                                          -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <section class="billboard" id="billboard">
+        <div class="billboard-slides" id="billboard-slides"></div>
+        <div class="billboard-vignette"></div>
+        <div class="billboard-vignette-left"></div>
+        <div class="billboard-vignette-bottom"></div>
+        <div class="billboard-content" id="billboard-content">
+            <div class="billboard-badge" id="billboard-badge">
+                <i data-lucide="trending-up"></i> Trending Now
+            </div>
+            <h1 class="billboard-title" id="billboard-title">Loading...</h1>
+            <div class="billboard-meta" id="billboard-meta">
+                <span class="quality-badge" id="billboard-quality">HD</span>
+                <span class="meta-dot">•</span>
+                <span id="billboard-year"></span>
+                <span class="meta-dot">•</span>
+                <span id="billboard-type"></span>
+                <span class="meta-dot">•</span>
+                <span class="rating-badge" id="billboard-rating">★ 0.0</span>
+            </div>
+            <p class="billboard-synopsis" id="billboard-synopsis"></p>
+            <div class="billboard-actions">
+                <button class="btn-play" id="billboard-play">
+                    <i data-lucide="play"></i>
+                    Play
+                </button>
+                <button class="btn-info" id="billboard-info">
+                    <i data-lucide="info"></i>
+                    More Info
+                </button>
+                <button class="btn-list" id="billboard-addlist" title="Add to My List">
+                    <i data-lucide="plus"></i>
+                </button>
+            </div>
+        </div>
+        <div class="billboard-dots" id="billboard-dots"></div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  GENRE TABS                                                -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <div class="genre-tabs" id="genre-tabs">
+        <button class="genre-tab active" data-genre="all">
+            <i data-lucide="layers"></i> All
+        </button>
+        <button class="genre-tab" data-genre="movie">
+            <i data-lucide="film"></i> Movies
+        </button>
+        <button class="genre-tab" data-genre="show">
+            <i data-lucide="tv"></i> TV Shows
+        </button>
+        <button class="genre-tab" data-genre="anime">
+            <i data-lucide="sparkles"></i> Anime
+        </button>
+        <button class="genre-tab" data-genre="recent">
+            <i data-lucide="clock"></i> Recently Added
+        </button>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  CONTENT AREA                                              -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <main class="content-area" id="content-area">
+
+        <!-- Continue Watching — Horizontal Row -->
+        <section class="content-row" id="continue-watching-row" style="display:none;">
+            <div class="row-header">
+                <h2 class="row-title"><i data-lucide="play-circle"></i> Continue Watching</h2>
+                <div class="row-nav">
+                    <button class="row-arrow row-arrow-left" data-target="continue-watching-scroll"><i data-lucide="chevron-left"></i></button>
+                    <button class="row-arrow row-arrow-right" data-target="continue-watching-scroll"><i data-lucide="chevron-right"></i></button>
+                </div>
+            </div>
+            <div class="horizontal-scroll" id="continue-watching-scroll">
+                <div class="card-row" id="continue-watching-grid"></div>
+            </div>
+        </section>
+
+        <!-- My List — Horizontal Row -->
+        <section class="content-row" id="my-list-row" style="display:none;">
+            <div class="row-header">
+                <h2 class="row-title"><i data-lucide="heart"></i> My List</h2>
+                <div class="row-nav">
+                    <button class="row-arrow row-arrow-left" data-target="my-list-scroll"><i data-lucide="chevron-left"></i></button>
+                    <button class="row-arrow row-arrow-right" data-target="my-list-scroll"><i data-lucide="chevron-right"></i></button>
+                </div>
+            </div>
+            <div class="horizontal-scroll" id="my-list-scroll">
+                <div class="card-row" id="my-list-grid"></div>
+            </div>
+        </section>
+
+        <!-- TV Show Collections — Horizontal Row -->
+        <section class="content-row" id="collections-row" style="display:none;">
+            <div class="row-header">
+                <h2 class="row-title"><i data-lucide="tv"></i> TV Shows</h2>
+                <div class="row-nav">
+                    <button class="row-arrow row-arrow-left" data-target="collections-scroll"><i data-lucide="chevron-left"></i></button>
+                    <button class="row-arrow row-arrow-right" data-target="collections-scroll"><i data-lucide="chevron-right"></i></button>
+                </div>
+            </div>
+            <div class="horizontal-scroll" id="collections-scroll">
+                <div class="card-row" id="collections-grid"></div>
+            </div>
+        </section>
+
+        <!-- All Content — Grid -->
+        <section class="content-row" id="all-content-row">
+            <div class="row-header">
+                <h2 class="row-title" id="content-heading"><i data-lucide="clapperboard"></i> All Content</h2>
+                <span class="content-count" id="content-count"></span>
+            </div>
+            <div class="card-grid" id="content-grid">
+                <!-- Skeleton Loading -->
+                <div class="skeleton"></div>
+                <div class="skeleton"></div>
+                <div class="skeleton"></div>
+                <div class="skeleton"></div>
+                <div class="skeleton"></div>
+                <div class="skeleton"></div>
+                <div class="skeleton"></div>
+                <div class="skeleton"></div>
+                <div class="skeleton"></div>
+                <div class="skeleton"></div>
+                <div class="skeleton"></div>
+                <div class="skeleton"></div>
+            </div>
+        </section>
+
+        <!-- Search Results -->
+        <section class="content-row" id="search-results-row" style="display:none;">
+            <div class="row-header">
+                <h2 class="row-title" id="search-heading"><i data-lucide="search"></i> Search Results</h2>
+            </div>
+            <div class="card-grid" id="search-grid"></div>
+        </section>
+
+        <!-- Empty State -->
+        <div class="empty-state" id="empty-state" style="display:none;">
+            <div class="empty-icon"><i data-lucide="film"></i></div>
+            <div class="empty-title">No content found</div>
+            <div class="empty-sub">Try a different search or check back later</div>
+            <button class="btn-retry" id="btn-retry" onclick="loadContent()">
+                <i data-lucide="refresh-cw"></i> Retry
+            </button>
+        </div>
+    </main>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  DETAIL MODAL                                              -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <div class="detail-modal-overlay" id="detail-modal" style="display:none;">
+        <div class="detail-modal">
+            <button class="detail-close" id="detail-close"><i data-lucide="x"></i></button>
+            <div class="detail-hero" id="detail-hero">
+                <div class="detail-vignette"></div>
+                <div class="detail-info">
+                    <h2 class="detail-title" id="detail-title"></h2>
+                    <div class="detail-meta" id="detail-meta"></div>
+                    <p class="detail-synopsis" id="detail-synopsis"></p>
+                    <div class="detail-actions">
+                        <button class="btn-play" id="detail-play"><i data-lucide="play"></i> Play</button>
+                        <button class="btn-info" id="detail-addlist"><i data-lucide="plus"></i> My List</button>
+                    </div>
+                </div>
+            </div>
+            <div class="detail-extra" id="detail-extra"></div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  VIDEO PLAYER OVERLAY                                      -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <div class="player-overlay" id="player-overlay">
+        <div class="player-container" id="player-container">
+            <button class="player-close" id="player-close" title="Close (Esc)">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+        <div class="next-episode-bar" id="next-episode-bar">
+            <div class="next-ep-info">
+                <div class="next-ep-title" id="next-ep-title">Next Episode</div>
+                <div class="next-ep-sub" id="next-ep-sub"></div>
+            </div>
+            <button class="btn-next-ep" id="btn-next-ep">Play Next ▶</button>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  FLOATING MINI-PLAYER                                      -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <div class="mini-player" id="mini-player" style="display:none;">
+        <div class="mini-player-progress" id="mini-player-progress"></div>
+        <div class="mini-player-info">
+            <img class="mini-player-thumb" id="mini-player-thumb" src="" alt="">
+            <div class="mini-player-text">
+                <span class="mini-player-title" id="mini-player-title"></span>
+                <span class="mini-player-sub" id="mini-player-sub"></span>
+            </div>
+        </div>
+        <div class="mini-player-controls">
+            <button class="mini-btn" id="mini-play-pause"><i data-lucide="play"></i></button>
+            <button class="mini-btn" id="mini-expand"><i data-lucide="maximize-2"></i></button>
+            <button class="mini-btn" id="mini-close"><i data-lucide="x"></i></button>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!--  FOOTER                                                    -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <footer class="footer">
+        <div class="footer-gradient"></div>
+        <div class="footer-content">
+            <div class="footer-brand">ATMOS</div>
+            <p class="footer-text">Personal cloud streaming — powered by Google Drive</p>
+            <div class="footer-links">
+                <a href="admin.html">Command Center</a>
+                <span class="footer-dot">•</span>
+                <a href="https://github.com" target="_blank">GitHub</a>
+            </div>
+            <p class="footer-copy">© 2024 ATMOS. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <!-- App Script -->
+    <script src="personal.js?v=8.0"></script>
+</body>
+</html>

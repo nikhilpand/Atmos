@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ATMOS — Command Center</title>
+    <meta name="description" content="ATMOS Admin Dashboard — Media Library Command Center">
+    <link rel="stylesheet" href="admin-base.css?v=8.0">
+    <link rel="stylesheet" href="admin-panels.css?v=8.0">
+    <link rel="stylesheet" href="admin-components.css?v=8.0">
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚙️</text></svg>">
+</head>
+<body>
+
+    <!-- AUTH OVERLAY -->
+    <div id="authOverlay">
+        <div class="auth-container">
+            <div class="auth-glow"></div>
+            <div class="auth-box">
+                <div class="auth-logo">ATMOS</div>
+                <p class="auth-subtitle">Command Center</p>
+                <div class="auth-input-group">
+                    <i data-lucide="lock" class="auth-icon-luc"></i>
+                    <input type="password" id="passInput" placeholder="Access Code" autofocus>
+                </div>
+                <button id="loginBtn"><span>Authenticate</span><i data-lucide="arrow-right"></i></button>
+                <div id="authError" class="auth-error">⚠️ Invalid access code</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN LAYOUT -->
+    <div id="dashboard" class="dashboard">
+
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-brand">
+                <span class="brand-logo">A</span>
+                <div class="brand-text">
+                    <div class="brand-name">ATMOS</div>
+                    <div class="brand-sub">Command Center</div>
+                </div>
+            </div>
+            <button class="sidebar-collapse-btn" id="sidebarCollapseBtn" title="Collapse"><i data-lucide="panel-left-close"></i></button>
+
+            <nav class="sidebar-nav">
+                <div class="nav-group">
+                    <button class="nav-item active" data-panel="panel-overview"><i data-lucide="layout-dashboard"></i><span>Overview</span></button>
+                    <div class="nav-sub-items">
+                        <button class="nav-item sub-item" data-panel="panel-analytics"><i data-lucide="bar-chart-3"></i><span>Analytics</span></button>
+                    </div>
+                </div>
+
+                <div class="nav-group">
+                    <button class="nav-item" data-panel="panel-library"><i data-lucide="folder-open"></i><span>Media Library</span></button>
+                    <div class="nav-sub-items">
+                        <button class="nav-item sub-item" data-panel="panel-drive"><i data-lucide="hard-drive"></i><span>Drive Explorer</span></button>
+                    </div>
+                </div>
+
+                <div class="nav-group">
+                    <button class="nav-item" data-panel="panel-discover"><i data-lucide="search"></i><span>Discover & Batch</span></button>
+                    <div class="nav-sub-items">
+                        <button class="nav-item sub-item" data-panel="panel-bulk"><i data-lucide="layers"></i><span>Bulk Ops</span></button>
+                    </div>
+                </div>
+
+                <div class="nav-group">
+                    <button class="nav-item" data-panel="panel-transfers"><i data-lucide="cloud-upload"></i><span>Operations</span><span class="nav-badge" id="navTransferBadge" style="display:none">0</span></button>
+                    <div class="nav-sub-items">
+                        <button class="nav-item sub-item" data-panel="panel-scheduler"><i data-lucide="calendar-clock"></i><span>Scheduler</span></button>
+                    </div>
+                </div>
+
+                <div class="nav-group">
+                    <button class="nav-item" data-panel="panel-console"><i data-lucide="terminal"></i><span>System Health</span></button>
+                    <div class="nav-sub-items">
+                        <button class="nav-item sub-item" data-panel="panel-feed"><i data-lucide="rss"></i><span>Activity Feed</span></button>
+                        <button class="nav-item sub-item" data-panel="panel-health"><i data-lucide="activity"></i><span>Health Monitor</span></button>
+                    </div>
+                </div>
+
+                <div class="nav-group">
+                    <button class="nav-item" data-panel="panel-config"><i data-lucide="settings"></i><span>Settings</span></button>
+                    <div class="nav-sub-items">
+                        <button class="nav-item sub-item" data-panel="panel-appearance"><i data-lucide="palette"></i><span>Appearance</span></button>
+                        <button class="nav-item sub-item" data-panel="panel-telegram"><i data-lucide="send"></i><span>Telegram Bot</span></button>
+                    </div>
+                </div>
+            </nav>
+
+            <div class="sidebar-footer">
+                <a href="index.html" class="btn-back-link"><i data-lucide="arrow-left"></i><span>Back to ATMOS</span></a>
+                <div class="sidebar-kbd"><kbd>?</kbd> Shortcuts</div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+
+            <!-- TOP BAR -->
+            <header class="top-bar">
+                <div class="top-bar-left">
+                    <button class="mobile-menu-btn" id="mobileMenuBtn"><i data-lucide="menu"></i></button>
+                    <h1 id="panelTitle">Overview</h1>
+                    <span class="connection-dot green" id="connectionDot"></span>
+                    <span class="connection-text" id="connectionText">Connected</span>
+                </div>
+                <div class="top-bar-right">
+                    <span id="wsIndicator" style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block;margin-right:6px;transition:background 0.3s" title="WebSocket"></span>
+                    <button class="icon-btn" id="refreshAllBtn" title="Refresh"><i data-lucide="refresh-cw"></i></button>
+                    <span class="uptime-display" id="uptimeDisplay"><i data-lucide="clock"></i> --:--</span>
+                </div>
+            </header>
+
+            <!-- PANEL: OVERVIEW -->
+            <section class="panel active" id="panel-overview">
+                <div class="status-ribbon">
+                    <div class="status-pill" id="statusBot"><span class="pulse-dot"></span><span>Bot</span></div>
+                    <div class="status-pill" id="statusDrive"><span class="pulse-dot"></span><span>Drive</span></div>
+                    <div class="status-pill" id="statusAPI"><span class="pulse-dot green"></span><span>API</span></div>
+                </div>
+                <div class="metrics-grid">
+                    <div class="metric-card glass"><div class="metric-header"><i data-lucide="folder"></i><span class="metric-label">Library</span></div><div class="metric-value counter" id="m-files" data-target="0">0</div><div class="metric-sub" id="m-size">Loading...</div></div>
+                    <div class="metric-card glass"><div class="metric-header"><i data-lucide="database"></i><span class="metric-label">Drive Quota</span></div><div class="metric-value" id="m-quota">—</div><div class="storage-bar-container"><div class="storage-bar" id="storageBar"></div></div><div class="metric-sub" id="m-quota-pct">—</div></div>
+                    <div class="metric-card glass"><div class="metric-header"><i data-lucide="zap"></i><span class="metric-label">Transfers</span></div><div class="metric-value counter" id="m-transfers" data-target="0">0</div><div class="metric-sub" id="m-queue">0 queued</div></div>
+                    <div class="metric-card glass accent-gold"><div class="metric-header"><i data-lucide="eye"></i><span class="metric-label">Views</span></div><div class="metric-value counter" id="m-views" data-target="0">0</div></div>
+                    <div class="metric-card glass accent-cyan"><div class="metric-header"><i data-lucide="play"></i><span class="metric-label">Streams</span></div><div class="metric-value counter" id="m-streams" data-target="0">0</div></div>
+                    <div class="metric-card glass accent-green"><div class="metric-header"><i data-lucide="timer"></i><span class="metric-label">Uptime</span></div><div class="metric-value" id="m-uptime">—</div></div>
+                </div>
+                <div class="section-header"><h2>Live Transfers</h2><span class="live-dot"></span></div>
+                <div id="liveTransfersContainer" class="transfer-list"><div class="empty-box">No active transfers.</div></div>
+                <div class="section-header mt-30"><h2>Recent Uploads</h2></div>
+                <div id="recentUploadsContainer" class="recent-uploads-grid"></div>
+            </section>
+
+            <!-- PANEL: DISCOVER (Ultra Pro Max) -->
+            <section class="panel" id="panel-discover">
+                <!-- Smart Search Bar -->
+                <div class="smart-search-hero">
+                    <div class="smart-search-box">
+                        <i data-lucide="sparkles"></i>
+                        <input type="text" id="smartSearch" placeholder="Search movies & shows (e.g., Cobra Kai)" autocomplete="off">
+                        <button class="smart-search-btn" id="btnSmartSearch"><i data-lucide="search"></i></button>
+                    </div>
+                </div>
+
+                <!-- Preference Chips -->
+                <div class="pref-bar" id="prefBar" style="display:none">
+                    <div class="pref-group">
+                        <span class="pref-label">Quality</span>
+                        <div class="chip-row" id="qualityChips">
+                            <button class="chip active" data-q="1080p">1080p</button>
+                            <button class="chip" data-q="720p">720p</button>
+                            <button class="chip" data-q="480p">480p</button>
+                        </div>
+                    </div>
+                    <div class="pref-group" id="langGroup" style="display:none">
+                        <span class="pref-label">Language</span>
+                        <div class="chip-row" id="langChips"></div>
+                    </div>
+                    <div class="pref-group" id="sourceGroup" style="display:none">
+                        <span class="pref-label">Sources</span>
+                        <div class="chip-row" id="sourceChips"></div>
+                    </div>
+                    <div class="pref-group" id="seasonGroup" style="display:none">
+                        <span class="pref-label">Seasons</span>
+                        <div class="chip-row" id="seasonChips"></div>
+                        <button class="chip chip-accent" id="btnSelectAllSeasons">All</button>
+                    </div>
+                </div>
+
+                <!-- TMDB Info Card -->
+                <div id="tmdbCard" class="tmdb-card glass" style="display:none">
+                    <img id="tmdbPoster" class="tmdb-poster" src="" alt="">
+                    <div class="tmdb-info">
+                        <h3 id="tmdbTitle"></h3>
+                        <div class="tmdb-meta">
+                            <span class="tmdb-year" id="tmdbYear"></span>
+                            <span class="tmdb-rating" id="tmdbRating"></span>
+                            <span class="tmdb-type" id="tmdbType"></span>
+                        </div>
+                        <p class="tmdb-synopsis" id="tmdbSynopsis"></p>
+                    </div>
+                </div>
+
+                <!-- Completeness Dashboard -->
+                <div id="completenessPanel" class="completeness-panel" style="display:none">
+                    <div class="section-header"><h2>📊 Season Completeness</h2></div>
+                    <div id="completenessGrid" class="completeness-grid"></div>
+                </div>
+
+                <!-- Smart Results -->
+                <div class="smart-results-toolbar" id="smartResultsToolbar" style="display:none">
+                    <div class="smart-results-info">
+                        <span id="smartResultCount">0 results</span>
+                        <span id="smartResultScope" class="badge"></span>
+                    </div>
+                    <div class="smart-results-actions">
+                        <button class="tool-btn accent" id="btnAutoForward"><i data-lucide="zap"></i> Auto-Forward Best</button>
+                        <button class="tool-btn" id="btnForwardSelected"><i data-lucide="download"></i> Forward Selected (<span id="selectedCount">0</span>)</button>
+                    </div>
+                </div>
+                <div id="smartResults" class="smart-results-list">
+                    <div class="discover-placeholder"><i data-lucide="sparkles" style="width:48px;height:48px;color:var(--text-muted)"></i><p>Ultra Pro Max Search — search for any movie or show</p></div>
+                </div>
+
+                <!-- Legacy Channel Manager (collapsed) -->
+                <details class="channel-manager-details mt-30">
+                    <summary><i data-lucide="radio"></i> Source Channels</summary>
+                    <div class="channel-manager"><div class="channel-input-row"><input type="text" id="newChannelInput" placeholder="Channel username..." autocomplete="off" class="input-glass"><button class="tool-btn" id="btnAddChannel"><i data-lucide="plus"></i> Add</button></div><div id="channelList" class="channel-chips"></div></div>
+                </details>
+            </section>
+
+            <!-- PANEL: LIBRARY -->
+            <section class="panel" id="panel-library">
+                <div class="panel-toolbar"><div class="search-box"><i data-lucide="search"></i><input type="text" id="librarySearch" placeholder="Search files..."></div>
+                    <div class="toolbar-actions">
+                        <div class="view-toggle"><button class="vt-btn" data-view="list" id="viewList" title="List"><i data-lucide="list"></i></button><button class="vt-btn active" data-view="grid" id="viewGrid" title="Grid"><i data-lucide="grid-3x3"></i></button></div>
+                        <button class="tool-btn" id="btnAutoRename" title="Auto-rename messy filenames"><i data-lucide="wand-2"></i> Auto Rename</button>
+                        <button class="tool-btn" id="btnUndoRename" title="Revert to original filenames"><i data-lucide="undo-2"></i> Undo Rename</button>
+                        <button class="tool-btn" id="btnBulkSelect"><i data-lucide="check-square"></i> Select</button>
+                        <button class="tool-btn" id="btnShareAll"><i data-lucide="share-2"></i> Share All</button>
+                        <button class="tool-btn" id="btnRefreshLib"><i data-lucide="refresh-cw"></i> Refresh</button>
+                    </div>
+                </div>
+                <div class="file-counter"><span id="fileCount">0</span> files</div>
+                <div class="table-wrapper"><table class="data-table"><thead><tr><th style="width:40px">#</th><th class="sortable" data-sort="name">Filename <i data-lucide="arrow-up-down"></i></th><th style="width:80px">Type</th><th class="sortable" data-sort="size" style="width:90px">Size <i data-lucide="arrow-up-down"></i></th><th style="width:110px">Modified</th><th style="width:150px">Actions</th></tr></thead><tbody id="fileTableBody"><tr><td colspan="6" class="loading-cell">Loading...</td></tr></tbody></table></div>
+                <div id="libraryGridView" class="library-grid" style="display:none"></div>
+            </section>
+
+            <!-- PANEL: TRANSFERS -->
+            <section class="panel" id="panel-transfers">
+                <div class="section-header"><h2>Active Queue</h2><span class="badge" id="activeQueueCount">0</span></div>
+                <div id="activeQueueContainer" class="transfer-list"><div class="empty-box">No active jobs.</div></div>
+                <div class="section-header mt-30"><h2>Transfer History</h2><span class="badge" id="historyCount">0</span></div>
+                <div id="transferHistoryContainer" class="history-list"><div class="empty-box">No history.</div></div>
+                <div class="section-header mt-30"><h2>Failed</h2><span class="badge danger" id="failedCount">0</span></div>
+                <div id="failedTransfersContainer" class="history-list"><div class="empty-box">No failures.</div></div>
+            </section>
+
+            <!-- PANEL: DRIVE EXPLORER -->
+            <section class="panel" id="panel-drive">
+                <div class="drive-toolbar">
+                    <div class="breadcrumb" id="driveBreadcrumb"><span class="bc-item active">📁 Root</span></div>
+                    <div class="toolbar-actions"><button class="tool-btn" id="btnDriveBack"><i data-lucide="arrow-left"></i> Back</button><button class="tool-btn" id="btnDriveNewFolder"><i data-lucide="folder-plus"></i> New Folder</button><button class="tool-btn" id="btnDriveRefresh"><i data-lucide="refresh-cw"></i></button></div>
+                </div>
+                <div id="driveFileList" class="drive-file-list"><div class="empty-box">Loading Drive contents...</div></div>
+            </section>
+
+            <!-- PANEL: BULK OPS -->
+            <section class="panel" id="panel-bulk">
+                <div class="bulk-section">
+                    <h3><i data-lucide="text-cursor-input"></i> Batch Rename</h3>
+                    <div class="bulk-form">
+                        <div class="input-row"><label>Find Pattern</label><input type="text" id="bulkFind" placeholder="Text or /regex/" class="input-glass"></div>
+                        <div class="input-row"><label>Replace With</label><input type="text" id="bulkReplace" placeholder="Replacement text" class="input-glass"></div>
+                        <div class="input-row"><label class="checkbox-label"><input type="checkbox" id="bulkRegex"> Use Regex</label></div>
+                        <div class="bulk-preview" id="bulkPreview"></div>
+                        <div class="btn-row"><button class="tool-btn" id="btnBulkPreview"><i data-lucide="eye"></i> Preview</button><button class="tool-btn accent" id="btnBulkApply"><i data-lucide="check"></i> Apply Rename</button></div>
+                    </div>
+                </div>
+                <div class="bulk-section mt-30">
+                    <h3><i data-lucide="trash-2"></i> Batch Delete</h3>
+                    <p class="text-muted">Select files from the Library panel, then use batch delete.</p>
+                    <button class="tool-btn danger" id="btnBulkDelete"><i data-lucide="trash-2"></i> Delete Selected (0)</button>
+                </div>
+            </section>
+
+            <!-- PANEL: SCHEDULER -->
+            <section class="panel" id="panel-scheduler">
+                <div class="section-header"><h2>Scheduled Tasks</h2><button class="tool-btn" id="btnNewSchedule"><i data-lucide="plus"></i> New Schedule</button></div>
+                <div id="schedulerList" class="scheduler-list"><div class="empty-box">No scheduled tasks. Create one to auto-scan channels.</div></div>
+                <div class="schedule-form glass" id="scheduleForm" style="display:none">
+                    <h3>New Scheduled Scan</h3>
+                    <div class="input-row"><label>Channel</label><input type="text" id="schedChannel" placeholder="Channel username" class="input-glass"></div>
+                    <div class="input-row"><label>Search Query</label><input type="text" id="schedQuery" placeholder="Search term" class="input-glass"></div>
+                    <div class="input-row"><label>Interval</label><select id="schedInterval" class="select-glass"><option value="3600">Every Hour</option><option value="21600">Every 6 Hours</option><option value="43200">Every 12 Hours</option><option value="86400">Every 24 Hours</option></select></div>
+                    <div class="input-row"><label>Quality Filter</label><select id="schedQuality" class="select-glass"><option value="all">Any</option><option value="1080p">1080p+</option><option value="2160p">4K Only</option></select></div>
+                    <div class="btn-row"><button class="tool-btn" id="btnSaveSchedule"><i data-lucide="save"></i> Save</button><button class="tool-btn" id="btnCancelSchedule">Cancel</button></div>
+                </div>
+            </section>
+
+            <!-- PANEL: CONSOLE -->
+            <section class="panel" id="panel-console">
+                <div class="console-toolbar">
+                    <div class="console-filters">
+                        <button class="log-filter active" data-level="all">All</button>
+                        <button class="log-filter" data-level="info">Info</button>
+                        <button class="log-filter" data-level="warn">Warn</button>
+                        <button class="log-filter" data-level="error">Error</button>
+                    </div>
+                    <div class="console-actions"><input type="text" id="consoleSearch" placeholder="Filter logs..." class="input-glass input-sm"><span class="badge" id="logCount">0</span><button class="tool-btn-sm" id="btnClearConsole"><i data-lucide="trash-2"></i></button><label class="checkbox-label"><input type="checkbox" id="consoleAutoScroll" checked> Auto-scroll</label></div>
+                </div>
+                <pre id="consoleOutput" class="console-output"></pre>
+            </section>
+
+            <!-- PANEL: HEALTH MONITOR -->
+            <section class="panel" id="panel-health">
+                <div class="health-grid">
+                    <div class="health-card glass"><div class="health-label"><i data-lucide="cpu"></i> CPU</div><div class="gauge-ring" id="gaugeCPU"><svg viewBox="0 0 120 120"><circle class="gauge-bg" cx="60" cy="60" r="54"/><circle class="gauge-fill" cx="60" cy="60" r="54" id="gaugeCPUFill"/></svg><span class="gauge-value" id="gaugeCPUVal">0%</span></div></div>
+                    <div class="health-card glass"><div class="health-label"><i data-lucide="memory-stick"></i> Memory</div><div class="gauge-ring" id="gaugeRAM"><svg viewBox="0 0 120 120"><circle class="gauge-bg" cx="60" cy="60" r="54"/><circle class="gauge-fill" cx="60" cy="60" r="54" id="gaugeRAMFill"/></svg><span class="gauge-value" id="gaugeRAMVal">0%</span></div></div>
+                    <div class="health-card glass"><div class="health-label"><i data-lucide="hard-drive"></i> Disk</div><div class="gauge-ring" id="gaugeDisk"><svg viewBox="0 0 120 120"><circle class="gauge-bg" cx="60" cy="60" r="54"/><circle class="gauge-fill" cx="60" cy="60" r="54" id="gaugeDiskFill"/></svg><span class="gauge-value" id="gaugeDiskVal">0%</span></div></div>
+                    <div class="health-card glass"><div class="health-label"><i data-lucide="wifi"></i> API Latency</div><div class="health-value" id="healthLatency">— ms</div><canvas id="latencyChart" height="80"></canvas></div>
+                </div>
+                <div class="section-header mt-30"><h2>System Info</h2></div>
+                <div id="healthInfo" class="health-info-grid"></div>
+            </section>
+
+            <!-- PANEL: ANALYTICS -->
+            <section class="panel" id="panel-analytics">
+                <div class="analytics-toolbar"><select id="analyticsRange" class="select-glass"><option value="7">Last 7 Days</option><option value="30">Last 30 Days</option><option value="90">Last 90 Days</option></select><button class="tool-btn-sm" id="btnExportCSV"><i data-lucide="download"></i> Export</button></div>
+                <div class="analytics-hero">
+                    <div class="analytics-card glass big"><i data-lucide="eye"></i><div class="analytics-number counter" id="a-views" data-target="0">0</div><div class="analytics-label">Page Views</div></div>
+                    <div class="analytics-card glass big"><i data-lucide="play"></i><div class="analytics-number counter" id="a-streams" data-target="0">0</div><div class="analytics-label">Streams</div></div>
+                    <div class="analytics-card glass big"><i data-lucide="folder"></i><div class="analytics-number counter" id="a-files" data-target="0">0</div><div class="analytics-label">Transfers</div></div>
+                    <div class="analytics-card glass big"><i data-lucide="database"></i><div class="analytics-number" id="a-data">0 B</div><div class="analytics-label">Data</div></div>
+                </div>
+                <div class="chart-container glass"><canvas id="viewsChart" height="250"></canvas></div>
+                <div class="mt-30"><button class="tool-btn danger" id="btnResetAnalytics"><i data-lucide="trash-2"></i> Reset Analytics</button></div>
+            </section>
+
+            <!-- PANEL: ACTIVITY FEED -->
+            <section class="panel" id="panel-feed">
+                <div class="section-header"><h2>Real-Time Activity</h2><span class="live-dot"></span></div>
+                <div id="activityFeed" class="activity-feed"><div class="empty-box">No activity yet.</div></div>
+            </section>
+
+            <!-- PANEL: TELEGRAM -->
+            <section class="panel" id="panel-telegram">
+                <div class="telegram-status-card glass">
+                    <div class="tg-header"><i data-lucide="send" style="width:32px;height:32px;color:#0088cc"></i><div><h3 id="tgBotName">ATMOS Bot</h3><span class="tg-status" id="tgBotStatus">Checking...</span></div></div>
+                    <div class="tg-meta-grid"><div class="tg-meta"><label>User</label><span id="tgAllowedUser">—</span></div><div class="tg-meta"><label>Queue</label><span id="tgQueueSize">0</span></div><div class="tg-meta"><label>Worker</label><span id="tgWorkerStatus">—</span></div></div>
+                </div>
+                <div class="section-header mt-30"><h2>Send Message</h2></div>
+                <div class="telegram-composer glass">
+                    <div class="msg-templates"><button class="template-btn" data-msg="📊 Status Report">📊 Status</button><button class="template-btn" data-msg="🔔 Test ping from admin">🔔 Ping</button><button class="template-btn" data-msg="✅ All clear">✅ Clear</button></div>
+                    <textarea id="tgMessageInput" placeholder="Type a message..." rows="3"></textarea>
+                    <div class="composer-bar"><span class="char-count" id="tgCharCount">0/4096</span><button class="send-btn" id="btnSendTelegram"><i data-lucide="send"></i> Send</button></div>
+                </div>
+                <div id="tgSendResult" class="send-result" style="display:none"></div>
+            </section>
+
+            <!-- PANEL: CONFIG -->
+            <section class="panel" id="panel-config">
+                <div class="section-header"><h2>System Controls</h2></div>
+                <div class="controls-grid">
+                    <button class="control-btn" id="btnClearQueue"><i data-lucide="trash-2"></i><span>Clear Queue</span><small>Flush pending transfers</small></button>
+                    <button class="control-btn danger" id="btnRestartServer"><i data-lucide="rotate-cw"></i><span>Restart Backend</span><small>Full HF Space restart</small></button>
+                    <button class="control-btn" id="btnShareAllConfig"><i data-lucide="share-2"></i><span>Share All Files</span><small>Make Drive files public</small></button>
+                    <button class="control-btn" id="btnReorgDrive"><i data-lucide="folder-tree"></i><span>Reorganize Drive</span><small>Auto-sort into folders</small></button>
+                </div>
+                <div class="section-header mt-30"><h2>Environment Secrets</h2></div>
+                <div class="table-wrapper"><table class="data-table"><thead><tr><th>Secret Key</th><th style="width:120px">Status</th></tr></thead><tbody id="configTableBody"><tr><td colspan="2" class="loading-cell">Loading...</td></tr></tbody></table></div>
+            </section>
+
+            <!-- PANEL: APPEARANCE -->
+            <section class="panel" id="panel-appearance">
+                <div class="section-header"><h2>Theme</h2></div>
+                <div class="theme-grid">
+                    <button class="theme-card active" data-theme="obsidian"><div class="theme-preview obsidian"></div><span>Obsidian Gold</span></button>
+                    <button class="theme-card" data-theme="midnight"><div class="theme-preview midnight"></div><span>Midnight Blue</span></button>
+                    <button class="theme-card" data-theme="neon"><div class="theme-preview neon"></div><span>Neon Noir</span></button>
+                    <button class="theme-card" data-theme="emerald"><div class="theme-preview emerald"></div><span>Emerald</span></button>
+                </div>
+                <div class="section-header mt-30"><h2>Accent Color</h2></div>
+                <div class="accent-picker">
+                    <button class="accent-swatch active" data-color="#FBBF24" style="background:#FBBF24"></button>
+                    <button class="accent-swatch" data-color="#7c5cfc" style="background:#7c5cfc"></button>
+                    <button class="accent-swatch" data-color="#06B6D4" style="background:#06B6D4"></button>
+                    <button class="accent-swatch" data-color="#22C55E" style="background:#22C55E"></button>
+                    <button class="accent-swatch" data-color="#EF4444" style="background:#EF4444"></button>
+                    <button class="accent-swatch" data-color="#FF2D95" style="background:#FF2D95"></button>
+                </div>
+                <div class="section-header mt-30"><h2>Interface</h2></div>
+                <div class="setting-row"><label>Compact Sidebar</label><label class="toggle"><input type="checkbox" id="settingCompact"><span class="toggle-slider"></span></label></div>
+                <div class="setting-row"><label>Animations</label><label class="toggle"><input type="checkbox" id="settingAnimations" checked><span class="toggle-slider"></span></label></div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- KEYBOARD SHORTCUTS OVERLAY -->
+    <div class="shortcuts-overlay" id="shortcutsOverlay" style="display:none">
+        <div class="shortcuts-modal glass">
+            <h2>Keyboard Shortcuts</h2>
+            <div class="shortcut-grid">
+                <div class="shortcut-item"><kbd>?</kbd><span>Show shortcuts</span></div>
+                <div class="shortcut-item"><kbd>1-9</kbd><span>Switch panel</span></div>
+                <div class="shortcut-item"><kbd>R</kbd><span>Refresh data</span></div>
+                <div class="shortcut-item"><kbd>/</kbd><span>Focus search</span></div>
+                <div class="shortcut-item"><kbd>Esc</kbd><span>Close overlay</span></div>
+                <div class="shortcut-item"><kbd>[</kbd><span>Collapse sidebar</span></div>
+            </div>
+            <button class="tool-btn mt-30" onclick="document.getElementById('shortcutsOverlay').style.display='none'">Close</button>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- V2.0 Modular Architecture -->
+    <script src="admin-core.js?v=8.0"></script>
+    <script src="admin-overview.js?v=8.0"></script>
+    <script src="admin-library.js?v=8.0"></script>
+    <script src="admin-discover.js?v=8.0"></script>
+    <script src="admin-transfers.js?v=8.0"></script>
+    <script src="admin-monitoring.js?v=8.0"></script>
+    <script src="admin-system.js?v=8.0"></script>
+</body>
+</html>

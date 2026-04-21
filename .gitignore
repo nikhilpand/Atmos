@@ -1,0 +1,50 @@
+# ─── Secrets & Credentials ───
+*.session
+:memory:.session
+token.json
+cookies.json
+cookies.txt
+.env
+.env.*
+!.env.example
+
+# ─── Python ───
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+*.db
+
+# ─── Node / Next.js ───
+node_modules/
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+frontend/.env.production
+frontend/.turbo/
+
+# ─── Downloads & Temp ───
+downloads/
+*.tmp
+queue_state.json
+analytics.json
+
+# ─── IDE ───
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ─── OS ───
+.DS_Store
+Thumbs.db
+
+# ─── Build Artifacts ───
+*.tsbuildinfo
+
+# ─── Agent / Graph ───
+.agent/
+graphify-out/
