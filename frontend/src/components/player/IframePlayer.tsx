@@ -53,6 +53,18 @@ export default function IframePlayer({
     return () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); };
   }, [activeProviderId]);
 
+  // Anti-Redirect Protection: Intercept ad scripts trying to navigate the top window
+  useEffect(() => {
+    const preventRedirect = (e: BeforeUnloadEvent) => {
+      // Browsers require preventDefault and returnValue to show the confirmation dialog
+      e.preventDefault();
+      e.returnValue = 'An ad tried to redirect you. Stay on this page to continue watching.';
+      return e.returnValue;
+    };
+    window.addEventListener('beforeunload', preventRedirect);
+    return () => window.removeEventListener('beforeunload', preventRedirect);
+  }, []);
+
   const reportHealth = (success: boolean) => {
     if (!tmdbId || !activeProviderId) return;
     fetch(`${SUBS_URL}/provider-report`, {
@@ -111,7 +123,6 @@ export default function IframePlayer({
         src={activeUrl}
         className="absolute inset-0 w-full h-full border-none z-10"
         allowFullScreen
-        sandbox="allow-scripts allow-same-origin allow-forms"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
         referrerPolicy="no-referrer"
         onLoad={handleIframeLoad}
