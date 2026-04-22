@@ -633,13 +633,4 @@ async def forward_to_pipeline(selected_results, pull_fn, rate_limit=2.0):
         'total_size_human': _human_size(total_size),
     }
 
-
-def _human_size(b):
-    """Format bytes into human-readable string."""
-    if b < 1024:
-        return f"{b} B"
-    for unit in ['KB', 'MB', 'GB', 'TB']:
-        b /= 1024
-        if b < 1024:
-            return f"{b:.1f} {unit}"
-    return f"{b:.1f} PB"
+from utils.human_size import human_size as _human_size

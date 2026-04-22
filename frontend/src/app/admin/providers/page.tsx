@@ -6,8 +6,13 @@ import {
   Plus, Server, Check, X, AlertTriangle, RefreshCw, Trash2,
   GripVertical, TestTube2, ToggleLeft, ToggleRight, Edit3, Save
 } from 'lucide-react';
-import { ADMIN_PASSWORD } from '@/lib/constants';
 import { DEFAULT_PROVIDERS } from '@/lib/providers';
+
+// Read admin password from sessionStorage (set by admin login page)
+function getAdminPassword(): string {
+  if (typeof window === 'undefined') return '';
+  return sessionStorage.getItem('atmos_admin_pwd') || '';
+}
 
 interface UIProvider {
   id: string;
@@ -34,7 +39,7 @@ export default function AdminProviders() {
     setIsLoading(true);
     try {
       const res = await fetch('/api/providers', {
-        headers: { 'x-admin-password': ADMIN_PASSWORD },
+        headers: { 'x-admin-password': getAdminPassword() },
       });
       if (res.ok) {
         const data = await res.json();
@@ -86,7 +91,7 @@ export default function AdminProviders() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'x-admin-password': ADMIN_PASSWORD,
+          'x-admin-password': getAdminPassword(),
         },
         body: JSON.stringify({ id: provider.id, enabled: !provider.enabled }),
       });
@@ -142,7 +147,7 @@ export default function AdminProviders() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'x-admin-password': ADMIN_PASSWORD,
+          'x-admin-password': getAdminPassword(),
         },
         body: JSON.stringify({ id: provider.id, health_score: 100, fail_count: 0 }),
       });
@@ -158,7 +163,7 @@ export default function AdminProviders() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-admin-password': ADMIN_PASSWORD,
+          'x-admin-password': getAdminPassword(),
         },
         body: JSON.stringify(newProvider),
       });
@@ -180,7 +185,7 @@ export default function AdminProviders() {
     try {
       await fetch(`/api/providers?id=${id}`, {
         method: 'DELETE',
-        headers: { 'x-admin-password': ADMIN_PASSWORD },
+        headers: { 'x-admin-password': getAdminPassword() },
       });
     } catch {
       fetchProviders(); // Refetch on error

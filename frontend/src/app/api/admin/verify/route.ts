@@ -9,7 +9,7 @@ export const runtime = 'nodejs';
 export async function POST(req: NextRequest) {
   try {
     const { password } = await req.json();
-    const adminPassword = process.env.ADMIN_PASSWORD || '1908';
+    const adminPassword = process.env.ADMIN_PASSWORD || '';
 
     if (password === adminPassword) {
       return NextResponse.json({ valid: true });

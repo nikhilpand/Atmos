@@ -4,13 +4,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { DEFAULT_PROVIDERS } from '@/lib/providers';
-import { ADMIN_PASSWORD } from '@/lib/constants';
 
 export const runtime = 'edge';
 
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+
 function checkAuth(request: NextRequest): boolean {
   const pwd = request.headers.get('x-admin-password') || '';
-  return pwd === ADMIN_PASSWORD;
+  return !!ADMIN_PASSWORD && pwd === ADMIN_PASSWORD;
 }
 
 // GET — List all providers

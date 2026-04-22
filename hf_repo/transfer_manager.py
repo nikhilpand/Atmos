@@ -173,12 +173,4 @@ class TransferManager:
             "server_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-
-def _human_size(num_bytes):
-    """Convert bytes to human-readable string."""
-    num_bytes = num_bytes or 0  # [CR2-L2] Guard against None
-    for unit in ["B", "KB", "MB", "GB", "TB"]:
-        if abs(num_bytes) < 1024.0:
-            return f"{num_bytes:.1f} {unit}"
-        num_bytes /= 1024.0
-    return f"{num_bytes:.1f} PB"
+from utils.human_size import human_size as _human_size

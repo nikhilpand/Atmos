@@ -8,7 +8,8 @@ export const META_URL = process.env.NEXT_PUBLIC_META_URL || "https://nikhil1776-
 export const SUBS_URL = process.env.NEXT_PUBLIC_SUBS_URL || "https://nikhil1776-atmos-subs.hf.space";
 
 // ─── TMDB Configuration ────────────────────────────────────────────
-export const TMDB_API_KEY = process.env.TMDB_API_KEY || process.env.NEXT_PUBLIC_TMDB_API_KEY || "";
+// Server-only: TMDB_API_KEY must NOT have NEXT_PUBLIC_ prefix in production.
+export const TMDB_API_KEY = process.env.TMDB_API_KEY || "";
 export const TMDB_BASE = "https://api.themoviedb.org/3";
 export const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p";
 export const TMDB_POSTER_SIZES = {
@@ -76,7 +77,6 @@ export const FEATURES = {
   TITLE_CACHE_TTL_MS: 24 * 60 * 60 * 1000, // 24 hours
 } as const;
 
-// ─── Admin (server-side only — do NOT use in client components) ────
-// ADMIN_PASSWORD is read from env on server API routes only.
-// Never import this in "use client" files.
-export const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '1908';
+// ─── Admin ──────────────────────────────────────────────────────────
+// ADMIN_PASSWORD removed from this file. It must only be read
+// in server-side API routes via process.env.ADMIN_PASSWORD directly.

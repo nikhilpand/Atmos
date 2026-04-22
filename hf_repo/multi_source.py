@@ -83,12 +83,7 @@ def _extract_quality(name: str) -> str:
     m = re.search(r'(2160p|4K|1080p|720p|480p|360p)', name, re.I)
     return m.group(1) if m else "unknown"
 
-def _human_size(b: int) -> str:
-    if b <= 0: return "—"
-    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-        if b < 1024: return f"{b:.1f} {unit}"
-        b /= 1024
-    return f"{b:.1f} PB"
+from utils.human_size import human_size as _human_size
 
 def _parse_size(s: str) -> int:
     """Parse size string like '1.5 GB' to bytes."""
