@@ -15,9 +15,16 @@ fi
 git commit -m "$COMMIT_MSG" || echo "No new changes to commit."
 
 # Push to GitHub
-echo "📦 Pushing to GitHub (This will automatically trigger Vercel and Hugging Face deployments)..."
+echo "📦 Pushing to GitHub..."
 git push origin main
 
-echo "✅ Push complete!"
-echo "⏳ Vercel will deploy the frontend automatically."
-echo "⏳ GitHub Actions will deploy Hugging Face spaces automatically."
+echo "🌐 Deploying Frontend via Vercel CLI..."
+cd frontend
+npx vercel --prod --yes
+cd ..
+
+echo "🤖 Triggering Hugging Face Deployment via GitHub Actions..."
+gh workflow run deploy.yml --ref main
+
+echo "✅ Deployment triggered successfully!"
+echo "Check your Hugging Face space in ~2 minutes."
