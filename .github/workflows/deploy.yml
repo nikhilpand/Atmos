@@ -1,6 +1,7 @@
 name: Deploy Backend to Hugging Face
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -14,6 +15,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+  workflow_dispatch:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
