@@ -3,7 +3,7 @@
 // No CORS issues, no browser fingerprint detection, cached results.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { makeProviders, makeStandardFetcher, targets } from '@movie-web/providers';
+import { makeProviders, makeStandardFetcher, makeSimpleProxyFetcher, targets } from '@movie-web/providers';
 import { createTTLCache } from '@/lib/cache';
 import { log } from '@/lib/logger';
 
@@ -11,8 +11,11 @@ import { log } from '@/lib/logger';
 export const runtime = 'nodejs';
 
 // ─── Server-side provider instance ─────────────────────────────────
+const PROXY_URL = process.env.NEXT_PUBLIC_CF_PROXY_URL;
+
 const serverProviders = makeProviders({
-  fetcher: makeStandardFetcher(fetch),
+  // Use CF Proxy if available to bypass Vercel datacenter IP blocks, else direct fetch
+  fetcher: PROXY_URL ? makeSimpleProxyFetcher(PROXY_URL, fetch) : makeStandardFetcher(fetch),
   target: targets.NATIVE,
 });
 
