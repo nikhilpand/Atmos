@@ -150,6 +150,29 @@ async function handleVidlinkProxy(request, url) {
       let text = await res.text();
       // Replace absolute URLs
       text = text.replace(/https:\/\/vidlink\.pro/g, `https://${url.host}`);
+      
+      if (contentType.includes('text/html')) {
+        const adBlockScript = `<script>
+          // ATMOS Aggressive Popup & Redirect Blocker
+          window.open = function() { console.log('ATMOS blocked window.open'); return null; };
+          // Disable top level navigation
+          Object.defineProperty(window, 'top', { value: window, writable: false, configurable: false });
+          document.addEventListener('click', function(e) {
+            const link = e.target.closest('a');
+            if (link && link.target === '_blank') {
+              e.preventDefault();
+              console.log('ATMOS blocked target=_blank click');
+            }
+          }, true);
+        </script>`;
+        text = text.replace('<head>', '<head>' + adBlockScript);
+      }
+
+      if (contentType.includes('application/javascript') || contentType.includes('text/javascript')) {
+        // Neuter Vidlink's sandbox detector so we can safely use the sandbox attribute
+        text = text.replace(/console\.log\("Sandboxed iframe detected"\),document\.body\.innerHTML='<div[^>]*><h1>Please Disable Sandbox<\/h1><\/div>'/g, 'console.log("ATMOS: Sandbox check bypassed")');
+      }
+
       return new Response(text, { status: res.status, headers: resHeaders });
     }
     

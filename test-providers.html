@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<body>
+<h1>Testing Providers</h1>
+<iframe id="player" width="800" height="600" allowfullscreen></iframe>
+<script>
+  const providers = [
+    "https://vidlink.pro/tv/76479/1/1",
+    "https://vidsrc.icu/embed/tv/76479/1/1",
+    "https://player.videasy.net/tv/76479/1/1",
+    "https://nontongo.win/embed/tv/76479/1/1",
+    "https://vidjoy.pro/embed/tv/76479/1/1"
+  ];
+  let i = 0;
+  function loadNext() {
+    if (i >= providers.length) return;
+    document.getElementById('player').src = providers[i];
+    console.log("Loaded: " + providers[i]);
+    i++;
+  }
+  loadNext();
+</script>
+</body>
+</html>
