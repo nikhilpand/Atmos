@@ -125,7 +125,6 @@ export default function IframePlayer({
         allowFullScreen
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
         referrerPolicy="no-referrer"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-presentation allow-popups"
         onLoad={handleIframeLoad}
         onError={handleIframeError}
         title={`Video player - ${activeProvider?.name || 'Stream'}`}
