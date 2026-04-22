@@ -5,7 +5,8 @@
 import { makeProviders, makeSimpleProxyFetcher, targets } from '@movie-web/providers';
 import { log } from '@/lib/logger';
 
-const PROXY_URL = '/api/proxy';
+// Check for a custom public proxy (like a Cloudflare Worker), otherwise fallback to the internal Next.js proxy
+const PROXY_URL = process.env.NEXT_PUBLIC_CF_PROXY_URL || '/api/proxy';
 
 const providers = makeProviders({
   fetcher: makeSimpleProxyFetcher(PROXY_URL, fetch),
