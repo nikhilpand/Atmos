@@ -4,7 +4,7 @@
 import React, { useEffect, useState, Suspense, useCallback, useMemo } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Info, ChevronRight, Tv, Film, Server, Play, X, Download } from 'lucide-react';
+import { ArrowLeft, Info, ChevronRight, Tv, Film, Server, Play, X, Download, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import StreamPlayer from '@/components/player/StreamPlayer';
 import ProviderSelector from '@/components/player/ProviderSelector';
@@ -33,6 +33,7 @@ function WatchPageInner() {
   const [showEpisodes, setShowEpisodes] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [selectedSeason, setSelectedSeason] = useState(season);
+  const [isNativeMode, setIsNativeMode] = useState(false);
 
   // ── Resolve stream providers (only in TMDB/iframe mode) ──
   const { data: streamData, isLoading: isResolving } = useQuery({
@@ -215,19 +216,29 @@ function WatchPageInner() {
                   </button>
                 )}
 
+                {/* Ad-Free Badge */}
+                {isNativeMode && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-medium">
+                    <ShieldCheck size={14} />
+                    <span className="hidden sm:inline">Ad-Free</span>
+                  </div>
+                )}
+
                 {/* Server Selector Toggle */}
-                <button
-                  onClick={() => { setShowServers(prev => !prev); setShowEpisodes(false); }}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
-                    showServers
-                      ? 'bg-violet-600/30 border-violet-500/30 text-violet-300'
-                      : 'bg-white/10 border-white/10 text-white/70 hover:bg-white/15 hover:text-white'
-                  }`}
-                >
-                  <Server size={12} />
-                  <span className="hidden sm:inline">Servers</span>
-                  <span className="bg-white/10 px-1.5 py-0.5 rounded text-[10px]">{providers.length}</span>
-                </button>
+                {!isNativeMode && (
+                  <button
+                    onClick={() => { setShowServers(prev => !prev); setShowEpisodes(false); }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
+                      showServers
+                        ? 'bg-violet-600/30 border-violet-500/30 text-violet-300'
+                        : 'bg-white/10 border-white/10 text-white/70 hover:bg-white/15 hover:text-white'
+                    }`}
+                  >
+                    <Server size={12} />
+                    <span className="hidden sm:inline">Servers</span>
+                    <span className="bg-white/10 px-1.5 py-0.5 rounded text-[10px]">{providers.length}</span>
+                  </button>
+                )}
 
                 {/* Title Info */}
                 {titleInfo && (
@@ -500,6 +511,7 @@ function WatchPageInner() {
             mediaType={mediaType}
             season={season}
             episode={episode}
+            onExtractionStateChange={setIsNativeMode}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
