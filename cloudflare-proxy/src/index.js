@@ -56,9 +56,32 @@ export default {
       return handleGenericProxy(request, destination);
     } else if (embed) {
       return handleUniversalEmbed(request, url, embed);
-    } else {
-      return handleVidlinkProxy(request, url);
     }
+
+    // ── SUB-RESOURCE REDIRECT ──
+    // When an embed page loaded via ?embed= tries to fetch a sub-resource
+    // (JS chunk, CSS, font, API call) using a relative URL, the browser
+    // resolves it against our proxy domain. We catch those here and
+    // redirect to the original embed domain.
+    const referer = request.headers.get('referer') || '';
+    const embedMatch = referer.match(/[?&]embed=([^&]+)/);
+    if (embedMatch && url.pathname !== '/') {
+      try {
+        const originalEmbed = decodeURIComponent(embedMatch[1]);
+        const originalOrigin = new URL(originalEmbed).origin;
+        const redirectUrl = originalOrigin + url.pathname + url.search;
+        return new Response(null, {
+          status: 302,
+          headers: {
+            'Location': redirectUrl,
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'public, max-age=3600',
+          },
+        });
+      } catch(e) { /* fallthrough to vidlink handler */ }
+    }
+
+    return handleVidlinkProxy(request, url);
   },
 };
 
@@ -153,18 +176,8 @@ async function handleUniversalEmbed(request, proxyUrl, embedUrl) {
     }
 
     let text = await res.text();
-    const proxyBase = `${proxyUrl.origin}?embed=${encodeURIComponent(embedUrl)}`;
 
-    // ── Rewrite all absolute URLs to this embed's origin to go through proxy ──
-    const originEscaped = targetOrigin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    text = text.replace(new RegExp(originEscaped, 'g'), proxyBase);
-    // Also rewrite protocol-relative URLs
-    text = text.replace(new RegExp(`//${targetHost.replace(/\./g, '\\.')}`, 'g'), `//${proxyUrl.host}?embed=${encodeURIComponent(embedUrl)}&__res=`);
-
-    // ── Rewrite relative src/href to go through proxy ──
-    text = text.replace(/(src|href|action)=(["'])\//g, `$1=$2${proxyBase}&__res=/`);
-
-    // ── Ad script neutralization ──
+    // ── Ad script neutralization (works on HTML and JS bundles) ──
     for (const ad of AD_DOMAINS) {
       text = text.replace(new RegExp(ad.replace(/\./g, '\\.'), 'g'), 'localhost');
     }
@@ -180,22 +193,24 @@ async function handleUniversalEmbed(request, proxyUrl, embedUrl) {
     text = text.replace(/console\.log\(["']Sandboxed iframe detected["']\)/g, 'console.log("ok")');
     text = text.replace(/["']sandbox["']\s*in\s/g, '"x-never" in ');
     text = text.replace(/\.sandbox\b/g, '.x_atmos_sandbox');
-    // Catch any innerHTML replacement mentioning sandbox
     text = text.replace(/Iframe Sandbox Detected/gi, 'ATMOS_OK');
     text = text.replace(/sandbox restrictions/gi, 'atmos_ok');
     text = text.replace(/Please Disable Sandbox/gi, 'ATMOS_OK');
     text = text.replace(/disable.*sandbox/gi, 'atmos_ok');
 
-    // ── Inject Master Protection Script into HTML ──
+    // ── HTML: inject <base> tag + protection script ──
+    // <base> makes ALL relative URLs resolve to the original embed origin
+    // so JS/CSS/images load directly from the provider (no 404s)
     if (ct.includes('text/html')) {
-      const injection = getMasterProtectionScript(proxyBase, embedUrl);
-      // Inject before first <script> or after <head>
+      const baseTag = `<base href="${targetOrigin}/">`;
+      const injection = getMasterProtectionScript(targetOrigin);
+      const headInjection = baseTag + injection;
       if (text.includes('<head>')) {
-        text = text.replace('<head>', '<head>' + injection);
+        text = text.replace('<head>', '<head>' + headInjection);
       } else if (text.includes('<HEAD>')) {
-        text = text.replace('<HEAD>', '<HEAD>' + injection);
+        text = text.replace('<HEAD>', '<HEAD>' + headInjection);
       } else {
-        text = injection + text;
+        text = headInjection + text;
       }
     }
 
@@ -212,7 +227,7 @@ async function handleUniversalEmbed(request, proxyUrl, embedUrl) {
 // MASTER PROTECTION SCRIPT — Injected into every proxied HTML page
 // This replaces the browser sandbox attribute with undetectable JS
 // ═══════════════════════════════════════════════════════════════════════
-function getMasterProtectionScript(proxyBase, embedUrl) {
+function getMasterProtectionScript(targetOrigin) {
   return `<style>
 [class*="banner"],[class*="adcash"],[id*="adcash"],[class*="ad-container"],
 [class*="ad-overlay"],[class*="popup"],[data-adcash],[id*="popads"],
@@ -224,34 +239,32 @@ div[style*="z-index: 2147"],div[style*="z-index:2147483647"]{
 }
 </style>
 <script>
-// ═══ ATMOS V5 — Undetectable Protection Layer ═══
+// ═══ ATMOS V5.1 — Undetectable Protection Layer ═══
 (function(){
   'use strict';
+  var currentHost = window.location.hostname;
 
   // ── 1. POPUP KILLER ──
-  // Override window.open to silently return a fake window object
-  // This is undetectable because the caller gets back a "valid" window
   var fakeWin = {
     closed: false, close: function(){this.closed=true},
     document: {write:function(){},close:function(){}},
     focus:function(){}, blur:function(){},
     postMessage:function(){}, location:{href:'about:blank'}
   };
-  Object.defineProperty(window, 'open', {
-    value: function(){ return fakeWin; },
-    writable: false, configurable: false
-  });
+  try {
+    Object.defineProperty(window, 'open', {
+      value: function(){ return fakeWin; },
+      writable: false, configurable: false
+    });
+  } catch(e){ window.open = function(){ return fakeWin; }; }
 
   // ── 2. FRAME DETECTION KILLER ──
-  // Make the page think it's NOT inside any frame at all
   try {
     Object.defineProperty(window, 'frameElement', {
       get: function(){ return null; },
       configurable: false
     });
   } catch(e){}
-
-  // Make window.top === window.self (looks like top-level)
   try {
     Object.defineProperty(window, 'top', {
       get: function(){ return window; },
@@ -265,24 +278,34 @@ div[style*="z-index: 2147"],div[style*="z-index:2147483647"]{
     });
   } catch(e){}
 
-  // ── 3. NAVIGATION LOCK ──
-  // Prevent any script from navigating away
-  var _loc = window.location;
-  var _origAssign = _loc.assign;
-  var _origReplace = _loc.replace;
-  var currentHost = _loc.hostname;
-
-  // Only allow navigation to same host
-  _loc.assign = function(url){
-    if (typeof url==='string' && (url.indexOf(currentHost)!==-1 || url.startsWith('/'))) {
-      _origAssign.call(_loc, url);
-    }
-  };
-  _loc.replace = function(url){
-    if (typeof url==='string' && (url.indexOf(currentHost)!==-1 || url.startsWith('/'))) {
-      _origReplace.call(_loc, url);
-    }
-  };
+  // ── 3. NAVIGATION LOCK (safe — no direct location property assignment) ──
+  // Intercept location.assign/replace via prototype
+  try {
+    var locProto = Object.getPrototypeOf(window.location);
+    var origAssign = locProto.assign;
+    var origReplace = locProto.replace;
+    locProto.assign = function(url){
+      if (typeof url==='string' && (url.indexOf(currentHost)!==-1 || url.startsWith('/'))) {
+        origAssign.call(this, url);
+      }
+    };
+    locProto.replace = function(url){
+      if (typeof url==='string' && (url.indexOf(currentHost)!==-1 || url.startsWith('/'))) {
+        origReplace.call(this, url);
+      }
+    };
+  } catch(e){}
+  // Also intercept direct location.href set via history
+  try {
+    var origPushState = history.pushState;
+    var origReplaceState = history.replaceState;
+    history.pushState = function(){
+      try { return origPushState.apply(this, arguments); } catch(e){}
+    };
+    history.replaceState = function(){
+      try { return origReplaceState.apply(this, arguments); } catch(e){}
+    };
+  } catch(e){}
 
   // ── 4. EVENT INTERCEPTION ──
   var _origAEL = EventTarget.prototype.addEventListener;
@@ -364,6 +387,47 @@ div[style*="z-index: 2147"],div[style*="z-index:2147483647"]{
   Object.defineProperty(window, 'getAdv', { value:function(){return null}, writable:false, configurable:false });
   window.Dm = class { constructor(){this.importObject={}} run(){} };
 
+  // ── 9. CORS PROXY — Route cross-origin fetch/XHR through our proxy ──
+  // This is critical: since the page origin is our proxy domain, any
+  // fetch() to the original embed domain gets CORS-blocked. We intercept
+  // and route through ?destination= which adds CORS headers.
+  var proxyOrigin = window.location.origin;
+  var _origFetch = window.fetch;
+  window.fetch = function(input, init) {
+    try {
+      var url = typeof input === 'string' ? input : (input instanceof Request ? input.url : String(input));
+      // Only proxy absolute cross-origin URLs
+      if (url.startsWith('http') && !url.startsWith(proxyOrigin)) {
+        var proxiedUrl = proxyOrigin + '?destination=' + encodeURIComponent(url);
+        if (typeof input === 'string') {
+          return _origFetch.call(window, proxiedUrl, init);
+        } else if (input instanceof Request) {
+          // Clone request with new URL
+          var newInit = init || {};
+          return _origFetch.call(window, proxiedUrl, {
+            method: input.method,
+            headers: input.headers,
+            body: input.body,
+            mode: 'cors',
+            credentials: 'omit',
+            ...newInit
+          });
+        }
+        return _origFetch.call(window, proxiedUrl, init);
+      }
+    } catch(e) {}
+    return _origFetch.call(window, input, init);
+  };
+
+  // XMLHttpRequest override
+  var _origXHROpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function(method, url) {
+    if (typeof url === 'string' && url.startsWith('http') && !url.startsWith(proxyOrigin)) {
+      arguments[1] = proxyOrigin + '?destination=' + encodeURIComponent(url);
+    }
+    return _origXHROpen.apply(this, arguments);
+  };
+
   console.log('[ATMOS] Protection active');
 })();
 </script>`;
@@ -420,7 +484,7 @@ async function handleVidlinkProxy(request, url) {
       text = text.replace(/sandbox restrictions/gi, 'atmos_ok');
       text = text.replace(/\.sandbox\b/g, '.x_sb');
       if (ct.includes('text/html')) {
-        const injection = getMasterProtectionScript(`https://${url.host}`, 'https://vidlink.pro');
+        const injection = getMasterProtectionScript('https://vidlink.pro');
         text = text.replace('<head>', '<head>' + injection);
       }
       rh.delete('content-length');
