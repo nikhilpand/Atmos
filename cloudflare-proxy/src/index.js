@@ -1,12 +1,12 @@
-// ─── ATMOS V3.0 — Cloudflare Worker: Nuclear Ad-Block Proxy ────────────
-// Dual Purpose Proxy:
-// 1. CORS Proxy for @movie-web/providers (when ?destination= is passed)
-// 2. Ad-Free Reverse Proxy for Vidlink.pro (when no destination is passed)
+// ─── ATMOS V5.0 — Universal Ad-Kill Reverse Proxy ──────────────────────
+// Three modes:
+//   1. ?destination=URL  → CORS proxy for @movie-web/providers
+//   2. ?embed=URL        → UNIVERSAL reverse proxy for ANY embed provider
+//   3. /path             → Legacy VidLink reverse proxy
 //
-// This version performs DEEP rewriting of ALL JS bundles to:
-//   - Strip ad library fetching (mercury, venus, popads, aclib, cloudfront ad CDN)
-//   - Neuter sandbox detection (multiple detection vectors)
-//   - Block window.open, top-navigation, and target=_blank
+// Mode 2 is the nuclear bypass: fetches any embed page, rewrites all
+// resource URLs to route through us, injects undetectable JS overrides
+// that replace sandbox functionality (popup block, nav lock, ad kill).
 
 const HEADER_MAP = {
   'x-cookie': 'cookie',
@@ -18,11 +18,24 @@ const HEADER_MAP = {
 
 const STRIP_HEADERS = ['content-encoding', 'content-length', 'transfer-encoding'];
 
+// Domains that serve ad scripts — block entirely
+const AD_DOMAINS = [
+  'popads.net', 'adcash.com', 'dcbbwymp1bhlf.cloudfront.net',
+  'pagead2.googlesyndication.com', 'ad.doubleclick.net',
+  'imasdk.googleapis.com', 'tpc.googlesyndication.com',
+  'mc.yandex.ru', 'counter.yadro.ru', 'top-fwz1.mail.ru',
+  'adblocker-bypass', 'syndication.exoclick.com',
+  'juicyads.com', 'trafficjunky.com', 'tsyndicate.com',
+  'a-ads.com', 'coinzillatag.com', 'ad-maven.com',
+  'hilltopads.net', 'richads.com', 'propellerads.com',
+  'pushground.com', 'clickadu.com', 'mondiad.com',
+];
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // 1. CORS Preflight
+    // CORS Preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, {
         status: 204,
@@ -36,302 +49,384 @@ export default {
       });
     }
 
-    // 2. Check if this is the generic proxy or the Vidlink reverse proxy
     const destination = url.searchParams.get('destination');
+    const embed = url.searchParams.get('embed');
 
     if (destination) {
       return handleGenericProxy(request, destination);
+    } else if (embed) {
+      return handleUniversalEmbed(request, url, embed);
     } else {
       return handleVidlinkProxy(request, url);
     }
   },
 };
 
-// ─── GENERIC CORS PROXY (For movie-web Extractors) ───
+// ─── GENERIC CORS PROXY ───
 async function handleGenericProxy(request, destination) {
   const headers = new Headers();
   for (const [key, value] of request.headers.entries()) {
-    const lowerKey = key.toLowerCase();
-    if (HEADER_MAP[lowerKey]) {
-      headers.set(HEADER_MAP[lowerKey], value);
-    } else if (!lowerKey.startsWith('x-') && lowerKey !== 'host' && lowerKey !== 'connection') {
-      headers.set(lowerKey, value);
-    }
+    const lk = key.toLowerCase();
+    if (HEADER_MAP[lk]) headers.set(HEADER_MAP[lk], value);
+    else if (!lk.startsWith('x-') && lk !== 'host' && lk !== 'connection') headers.set(lk, value);
   }
 
-  const upstreamRequest = new Request(destination, {
-    method: request.method,
-    headers: headers,
-    body: request.method !== 'GET' && request.method !== 'HEAD' ? request.body : undefined,
-    redirect: 'follow',
-  });
-
   try {
-    const response = await fetch(upstreamRequest);
-    const responseHeaders = new Headers();
-    
+    const response = await fetch(new Request(destination, {
+      method: request.method,
+      headers,
+      body: request.method !== 'GET' && request.method !== 'HEAD' ? request.body : undefined,
+      redirect: 'follow',
+    }));
+    const rh = new Headers();
     for (const [key, value] of response.headers.entries()) {
-      const lowerKey = key.toLowerCase();
-      if (!STRIP_HEADERS.includes(lowerKey) && lowerKey !== 'access-control-allow-origin') {
-        responseHeaders.set(lowerKey, value);
-      }
+      const lk = key.toLowerCase();
+      if (!STRIP_HEADERS.includes(lk) && lk !== 'access-control-allow-origin') rh.set(lk, value);
     }
-
     if (response.headers.has('set-cookie')) {
-      responseHeaders.set('x-set-cookie', response.headers.get('set-cookie'));
-      responseHeaders.delete('set-cookie');
+      rh.set('x-set-cookie', response.headers.get('set-cookie'));
+      rh.delete('set-cookie');
     }
-
-    if (response.url && response.url !== destination) {
-      responseHeaders.set('x-final-destination', response.url);
-    }
-
-    responseHeaders.set('Access-Control-Allow-Origin', '*');
-    responseHeaders.set('Access-Control-Expose-Headers', 'x-set-cookie, x-final-destination');
-
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: responseHeaders,
-    });
+    if (response.url && response.url !== destination) rh.set('x-final-destination', response.url);
+    rh.set('Access-Control-Allow-Origin', '*');
+    rh.set('Access-Control-Expose-Headers', 'x-set-cookie, x-final-destination');
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers: rh });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.message }), {
-      status: 502,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      status: 502, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
     });
   }
 }
 
-// ─── AD-FREE VIDLINK REVERSE PROXY ───
-async function handleVidlinkProxy(request, url) {
-  const targetPath = url.pathname;
-  
-  // ═══════════════════════════════════════════════════════════════════
-  // LAYER 1: BLOCK AD API ENDPOINTS COMPLETELY
-  // These endpoints serve the ad libraries. Return empty/neutered JS.
-  // ═══════════════════════════════════════════════════════════════════
-  if (targetPath.includes('/api/mercury') || targetPath.includes('/api/venus')) {
-    return new Response("<script>console.log('ATMOS: ad endpoint neutralized')</script>", {
-      status: 200,
-      headers: { 'Content-Type': 'text/html', 'Access-Control-Allow-Origin': '*' }
+// ═══════════════════════════════════════════════════════════════════════
+// UNIVERSAL EMBED PROXY — The core bypass engine
+// Takes any embed URL, proxies it, rewrites all resources through us,
+// and injects invisible protection JS.
+// ═══════════════════════════════════════════════════════════════════════
+async function handleUniversalEmbed(request, proxyUrl, embedUrl) {
+  let targetUrl;
+  try {
+    targetUrl = new URL(embedUrl);
+  } catch {
+    return new Response('Invalid embed URL', { status: 400 });
+  }
+
+  const targetOrigin = targetUrl.origin;
+  const targetHost = targetUrl.hostname;
+
+  // Block known ad domains
+  if (AD_DOMAINS.some(d => targetHost.includes(d))) {
+    return new Response('/* blocked */', {
+      status: 200, headers: { 'Content-Type': 'application/javascript', 'Access-Control-Allow-Origin': '*' },
     });
   }
 
-  // Block the WASM ad engine — return minimal valid WASM (8 bytes = magic + version)
-  if (targetPath.endsWith('/fu.wasm')) {
-    const minimalWasm = new Uint8Array([0x00,0x61,0x73,0x6d, 0x01,0x00,0x00,0x00]);
-    return new Response(minimalWasm, {
-      status: 200,
-      headers: { 'Content-Type': 'application/wasm', 'Access-Control-Allow-Origin': '*' }
-    });
-  }
+  // Sub-resource request — the embed page loaded a relative asset
+  const subRes = proxyUrl.searchParams.get('__res');
+  const finalUrl = subRes ? new URL(subRes, targetOrigin).href : embedUrl;
 
-  // Block script.js (WASM loader + getAdv definer) — return neutered version
-  if (targetPath === '/script.js') {
-    return new Response(`
-      // ATMOS: Neutered ad loader
-      window.getAdv = function() { return null; };
-      window.Dm = class { constructor() { this.importObject = {}; } run() {} };
-      console.log('ATMOS: Ad loader neutralized');
-    `, {
-      status: 200,
-      headers: { 'Content-Type': 'application/javascript', 'Access-Control-Allow-Origin': '*' }
-    });
-  }
-
-  // Block known ad CDN domains and patterns
-  if (targetPath.includes('popads') || targetPath.includes('dcbbwymp') || targetPath.includes('cloudfront.net') || targetPath.includes('adcash')) {
-    return new Response("/* ATMOS: blocked */", {
-      status: 200,
-      headers: { 'Content-Type': 'application/javascript', 'Access-Control-Allow-Origin': '*' }
-    });
-  }
-
-  // ═══════════════════════════════════════════════════════════════════
-  // LAYER 2: PROXY THE REQUEST TO VIDLINK
-  // ═══════════════════════════════════════════════════════════════════
-  const targetUrl = 'https://vidlink.pro' + targetPath + url.search;
-  
-  const proxyReqHeaders = new Headers(request.headers);
-  proxyReqHeaders.set('Host', 'vidlink.pro');
-  proxyReqHeaders.set('Origin', 'https://vidlink.pro');
-  
-  if (proxyReqHeaders.has('Referer')) {
-     const newReferer = proxyReqHeaders.get('Referer').replace(url.host, 'vidlink.pro');
-     proxyReqHeaders.set('Referer', newReferer);
-  } else {
-     proxyReqHeaders.set('Referer', 'https://vidlink.pro/');
-  }
-
-  const proxyReq = new Request(targetUrl, {
-    method: request.method,
-    headers: proxyReqHeaders,
-    body: request.method !== 'GET' && request.method !== 'HEAD' ? request.body : undefined,
-    redirect: 'follow'
-  });
+  const reqHeaders = new Headers();
+  reqHeaders.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36');
+  reqHeaders.set('Accept', '*/*');
+  reqHeaders.set('Referer', targetOrigin + '/');
+  reqHeaders.set('Origin', targetOrigin);
+  reqHeaders.set('Host', new URL(finalUrl).hostname);
 
   try {
-    const res = await fetch(proxyReq);
-    
-    // Strip security headers that prevent iframe embedding
-    const resHeaders = new Headers(res.headers);
-    resHeaders.delete('X-Frame-Options');
-    resHeaders.delete('Content-Security-Policy');
-    resHeaders.delete('frame-ancestors');
-    resHeaders.set('Access-Control-Allow-Origin', '*');
+    const res = await fetch(finalUrl, { headers: reqHeaders, redirect: 'follow' });
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    const rh = new Headers();
 
-    const contentType = resHeaders.get('content-type') || '';
+    for (const [key, value] of res.headers.entries()) {
+      const lk = key.toLowerCase();
+      if (!STRIP_HEADERS.includes(lk) && lk !== 'x-frame-options' && lk !== 'content-security-policy' && lk !== 'access-control-allow-origin') {
+        rh.set(lk, value);
+      }
+    }
+    rh.delete('x-frame-options');
+    rh.delete('content-security-policy');
+    rh.set('Access-Control-Allow-Origin', '*');
 
-    // ═══════════════════════════════════════════════════════════════════
-    // LAYER 3: DEEP REWRITE HTML AND ALL JS BUNDLES
-    // ═══════════════════════════════════════════════════════════════════
-    if (contentType.includes('text/html') || contentType.includes('javascript')) {
-      let text = await res.text();
-      
-      // --- URL Rewriting: Make all vidlink.pro URLs point to our proxy ---
-      text = text.replace(/https:\/\/vidlink\.pro/g, `https://${url.host}`);
-      
-      // ── NUCLEAR AD REMOVAL (works on both HTML inline scripts AND JS bundles) ──
-      
-      // 1. Kill the Adcash component (module 4883) — fetch("/api/mercury"...) 
-      //    Replace the entire fetch-and-inject logic with a no-op
-      text = text.replace(/fetch\(["']\/api\/mercury["']/g, 'fetch("/api/_blocked_mercury"');
-      text = text.replace(/fetch\(["']\/api\/venus["']/g, 'fetch("/api/_blocked_venus"');
-      
-      // 2. Kill aclib.runPop calls
-      text = text.replace(/window\.aclib\.runPop\(/g, 'console.log("ATMOS:blocked",');
-      text = text.replace(/aclib\.runPop\(/g, 'console.log("ATMOS:blocked",');
-      
-      // 3. Kill the CloudFront ad script injection  
-      text = text.replace(/dcbbwymp1bhlf\.cloudfront\.net/g, 'localhost');
-      
-      // 4. Kill popads script ID references
-      text = text.replace(/"popads-script"/g, '"atmos-blocked"');
-      
-      // ── SANDBOX DETECTION NEUTRALIZATION ──
-      
-      // Strategy: Replace the sandbox detector function body.
-      // The detector sets document.body.innerHTML to show "Please Disable Sandbox"
-      // We need to neuter ALL the detection vectors:
-      
-      // Vector 1: frameElement.hasAttribute("sandbox") check
-      text = text.replace(/\.hasAttribute\(["']sandbox["']\)/g, '.hasAttribute("atmos-never-match")');
-      
-      // Vector 2: The error message display function
-      // Pattern: console.log("Sandboxed iframe detected"),document.body.innerHTML='...'
-      text = text.replace(
-        /console\.log\(["']Sandboxed iframe detected["']\)/g,
-        'console.log("ATMOS: sandbox check bypassed")'
-      );
-      text = text.replace(
-        /document\.body\.innerHTML='<div[^']*Please Disable Sandbox[^']*>'/g,
-        'console.log("ATMOS: sandbox noop")'
-      );
-      
-      // Vector 3: The document.domain assignment test
-      // When sandboxed, setting document.domain throws; they catch it and check for "sandbox" in the error
-      text = text.replace(
-        /\.toString\(\)\.toLowerCase\(\)\.includes\(["']sandbox["']\)/g,
-        '.toString().toLowerCase().includes("atmos-never-match")'
-      );
-      
-      // Vector 4: Chrome PDF Viewer plugin test (sandbox blocks plugins)
-      text = text.replace(
-        /navigator\.plugins\.namedItem\(["']Chrome PDF Viewer["']\)/g,
-        'true /* ATMOS: PDF check bypassed */'
-      );
+    // Binary/media — pass through
+    if (!ct.includes('text/html') && !ct.includes('javascript') && !ct.includes('text/css')) {
+      return new Response(res.body, { status: res.status, headers: rh });
+    }
 
-      // ── HTML-SPECIFIC: Inject our master protection script at the top ──
-      if (contentType.includes('text/html')) {
-        const masterScript = `<style>
-/* ATMOS: Hide all ad containers */
-[class*="banner"], [class*="adcash"], [id*="adcash"], [class*="ad-container"],
-[class*="ad-overlay"], [class*="popup"], [data-adcash], [id*="popads"],
-iframe[src*="adcash"], iframe[src*="cloudfront"], div[style*="z-index: 9999"],
-div[style*="z-index:9999"], div[style*="z-index: 2147"] { display:none!important; visibility:hidden!important; }
+    let text = await res.text();
+    const proxyBase = `${proxyUrl.origin}?embed=${encodeURIComponent(embedUrl)}`;
+
+    // ── Rewrite all absolute URLs to this embed's origin to go through proxy ──
+    const originEscaped = targetOrigin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    text = text.replace(new RegExp(originEscaped, 'g'), proxyBase);
+    // Also rewrite protocol-relative URLs
+    text = text.replace(new RegExp(`//${targetHost.replace(/\./g, '\\.')}`, 'g'), `//${proxyUrl.host}?embed=${encodeURIComponent(embedUrl)}&__res=`);
+
+    // ── Rewrite relative src/href to go through proxy ──
+    text = text.replace(/(src|href|action)=(["'])\//g, `$1=$2${proxyBase}&__res=/`);
+
+    // ── Ad script neutralization ──
+    for (const ad of AD_DOMAINS) {
+      text = text.replace(new RegExp(ad.replace(/\./g, '\\.'), 'g'), 'localhost');
+    }
+    text = text.replace(/fetch\(["']\/api\/mercury["']/g, 'fetch("/api/_dead"');
+    text = text.replace(/fetch\(["']\/api\/venus["']/g, 'fetch("/api/_dead"');
+    text = text.replace(/window\.aclib\.runPop\(/g, 'console.log("x",');
+    text = text.replace(/aclib\.runPop\(/g, 'console.log("x",');
+    text = text.replace(/"popads-script"/g, '"x-blocked"');
+
+    // ── Sandbox detection neutralization ──
+    text = text.replace(/\.hasAttribute\(["']sandbox["']\)/g, '.hasAttribute("x-never")');
+    text = text.replace(/\.getAttribute\(["']sandbox["']\)/g, '.getAttribute("x-never")');
+    text = text.replace(/console\.log\(["']Sandboxed iframe detected["']\)/g, 'console.log("ok")');
+    text = text.replace(/["']sandbox["']\s*in\s/g, '"x-never" in ');
+    text = text.replace(/\.sandbox\b/g, '.x_atmos_sandbox');
+    // Catch any innerHTML replacement mentioning sandbox
+    text = text.replace(/Iframe Sandbox Detected/gi, 'ATMOS_OK');
+    text = text.replace(/sandbox restrictions/gi, 'atmos_ok');
+    text = text.replace(/Please Disable Sandbox/gi, 'ATMOS_OK');
+    text = text.replace(/disable.*sandbox/gi, 'atmos_ok');
+
+    // ── Inject Master Protection Script into HTML ──
+    if (ct.includes('text/html')) {
+      const injection = getMasterProtectionScript(proxyBase, embedUrl);
+      // Inject before first <script> or after <head>
+      if (text.includes('<head>')) {
+        text = text.replace('<head>', '<head>' + injection);
+      } else if (text.includes('<HEAD>')) {
+        text = text.replace('<HEAD>', '<HEAD>' + injection);
+      } else {
+        text = injection + text;
+      }
+    }
+
+    rh.delete('content-length');
+    rh.set('content-type', ct);
+    return new Response(text, { status: res.status, headers: rh });
+
+  } catch (err) {
+    return new Response(`Proxy Error: ${err.message}`, { status: 502 });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MASTER PROTECTION SCRIPT — Injected into every proxied HTML page
+// This replaces the browser sandbox attribute with undetectable JS
+// ═══════════════════════════════════════════════════════════════════════
+function getMasterProtectionScript(proxyBase, embedUrl) {
+  return `<style>
+[class*="banner"],[class*="adcash"],[id*="adcash"],[class*="ad-container"],
+[class*="ad-overlay"],[class*="popup"],[data-adcash],[id*="popads"],
+iframe[src*="adcash"],iframe[src*="cloudfront"],
+div[style*="z-index: 9999"],div[style*="z-index:9999"],
+div[style*="z-index: 2147"],div[style*="z-index:2147483647"]{
+  display:none!important;visibility:hidden!important;
+  width:0!important;height:0!important;pointer-events:none!important;
+}
 </style>
 <script>
-// ═══ ATMOS Master Protection Layer ═══
-(function() {
-  // Kill the ad data provider function
-  window.getAdv = function() { return null; };
-  Object.defineProperty(window, 'getAdv', { value: function(){return null}, writable: false, configurable: false });
-  
-  // Block ALL popups
-  window.open = function() { return null; };
-  
-  // Prevent scripts from detecting they're in a sandbox
+// ═══ ATMOS V5 — Undetectable Protection Layer ═══
+(function(){
+  'use strict';
+
+  // ── 1. POPUP KILLER ──
+  // Override window.open to silently return a fake window object
+  // This is undetectable because the caller gets back a "valid" window
+  var fakeWin = {
+    closed: false, close: function(){this.closed=true},
+    document: {write:function(){},close:function(){}},
+    focus:function(){}, blur:function(){},
+    postMessage:function(){}, location:{href:'about:blank'}
+  };
+  Object.defineProperty(window, 'open', {
+    value: function(){ return fakeWin; },
+    writable: false, configurable: false
+  });
+
+  // ── 2. FRAME DETECTION KILLER ──
+  // Make the page think it's NOT inside any frame at all
   try {
     Object.defineProperty(window, 'frameElement', {
-      get: function() { return null; },
+      get: function(){ return null; },
       configurable: false
     });
-  } catch(e) {}
-  
-  // Block top-level navigation
+  } catch(e){}
+
+  // Make window.top === window.self (looks like top-level)
   try {
-    Object.defineProperty(window, 'top', { value: window, writable: false, configurable: false });
-  } catch(e) {}
-  
-  // Intercept ALL click events that try to open new tabs
-  document.addEventListener('click', function(e) {
-    var a = e.target.closest ? e.target.closest('a') : null;
-    if (a && (a.target === '_blank' || a.href && a.href.indexOf(window.location.hostname) === -1)) {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      return false;
+    Object.defineProperty(window, 'top', {
+      get: function(){ return window; },
+      configurable: false
+    });
+  } catch(e){}
+  try {
+    Object.defineProperty(window, 'parent', {
+      get: function(){ return window; },
+      configurable: false
+    });
+  } catch(e){}
+
+  // ── 3. NAVIGATION LOCK ──
+  // Prevent any script from navigating away
+  var _loc = window.location;
+  var _origAssign = _loc.assign;
+  var _origReplace = _loc.replace;
+  var currentHost = _loc.hostname;
+
+  // Only allow navigation to same host
+  _loc.assign = function(url){
+    if (typeof url==='string' && (url.indexOf(currentHost)!==-1 || url.startsWith('/'))) {
+      _origAssign.call(_loc, url);
     }
-  }, true);
-  
-  // Block form submissions to external URLs
-  document.addEventListener('submit', function(e) {
-    var form = e.target;
-    if (form.action && form.action.indexOf(window.location.hostname) === -1) {
-      e.preventDefault();
-      return false;
-    }
-  }, true);
-  
-  // Neuter beforeunload handlers from ad scripts
-  var origAddEventListener = EventTarget.prototype.addEventListener;
-  EventTarget.prototype.addEventListener = function(type, fn, opts) {
-    if (type === 'beforeunload') return;
-    return origAddEventListener.call(this, type, fn, opts);
   };
-  
-  // MutationObserver: auto-remove any ad elements injected after page load
-  var observer = new MutationObserver(function(mutations) {
-    mutations.forEach(function(m) {
-      m.addedNodes.forEach(function(node) {
-        if (node.nodeType !== 1) return;
-        var el = node;
-        var id = (el.id || '').toLowerCase();
-        var cls = (el.className || '').toString().toLowerCase();
-        if (id.includes('adcash') || id.includes('popads') || cls.includes('adcash') || cls.includes('banner')) {
-          el.remove();
+  _loc.replace = function(url){
+    if (typeof url==='string' && (url.indexOf(currentHost)!==-1 || url.startsWith('/'))) {
+      _origReplace.call(_loc, url);
+    }
+  };
+
+  // ── 4. EVENT INTERCEPTION ──
+  var _origAEL = EventTarget.prototype.addEventListener;
+  EventTarget.prototype.addEventListener = function(type, fn, opts){
+    // Block beforeunload (redirect trap)
+    if (type === 'beforeunload') return;
+    return _origAEL.call(this, type, fn, opts);
+  };
+
+  // ── 5. CLICK SANITIZER ──
+  document.addEventListener('click', function(e){
+    var a = e.target && e.target.closest ? e.target.closest('a') : null;
+    if (a) {
+      var href = a.getAttribute('href') || '';
+      // Block external links and target=_blank
+      if (a.target === '_blank' || (href.startsWith('http') && href.indexOf(currentHost)===-1)) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        return false;
+      }
+    }
+  }, true);
+
+  // Block form submissions to external domains
+  document.addEventListener('submit', function(e){
+    var f = e.target;
+    if (f && f.action && f.action.indexOf(currentHost)===-1) {
+      e.preventDefault();
+      return false;
+    }
+  }, true);
+
+  // ── 6. DYNAMIC AD REMOVAL ──
+  var obs = new MutationObserver(function(muts){
+    muts.forEach(function(m){
+      m.addedNodes.forEach(function(n){
+        if (n.nodeType!==1) return;
+        var id = (n.id||'').toLowerCase();
+        var cls = (n.className||'').toString().toLowerCase();
+        var tag = n.tagName;
+        // Remove ad containers
+        if (id.includes('adcash')||id.includes('popads')||cls.includes('adcash')||cls.includes('ad-overlay')) {
+          n.remove(); return;
         }
-        // Remove injected iframes from ad scripts
-        if (el.tagName === 'IFRAME' && el.src && (el.src.includes('adcash') || el.src.includes('cloudfront'))) {
-          el.remove();
+        // Remove injected ad iframes
+        if (tag==='IFRAME' && n.src) {
+          var s = n.src.toLowerCase();
+          if (s.includes('adcash')||s.includes('cloudfront')||s.includes('doubleclick')||s.includes('googlesyndication')) {
+            n.remove(); return;
+          }
+        }
+        // Remove high z-index overlays (ad popups)
+        if (tag==='DIV' && n.style) {
+          var z = parseInt(n.style.zIndex);
+          if (z > 99999 && !n.querySelector('video')) {
+            n.remove(); return;
+          }
         }
       });
     });
   });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  if (document.documentElement) obs.observe(document.documentElement, {childList:true,subtree:true});
+
+  // ── 7. SANDBOX ATTRIBUTE SPOOFER ──
+  // If any script tries to read sandbox attribute from our iframe, return null
+  var _origGetAttr = Element.prototype.getAttribute;
+  Element.prototype.getAttribute = function(name){
+    if (name === 'sandbox') return null;
+    return _origGetAttr.call(this, name);
+  };
+  var _origHasAttr = Element.prototype.hasAttribute;
+  Element.prototype.hasAttribute = function(name){
+    if (name === 'sandbox') return false;
+    return _origHasAttr.call(this, name);
+  };
+
+  // ── 8. AD FUNCTION NEUTRALIZATION ──
+  Object.defineProperty(window, 'getAdv', { value:function(){return null}, writable:false, configurable:false });
+  window.Dm = class { constructor(){this.importObject={}} run(){} };
+
+  console.log('[ATMOS] Protection active');
 })();
 </script>`;
-        text = text.replace('<head>', '<head>' + masterScript);
-      }
+}
 
-      // Remove content-length since we changed the body
-      resHeaders.delete('content-length');
-      return new Response(text, { status: res.status, headers: resHeaders });
+// ─── LEGACY VIDLINK REVERSE PROXY (kept for backward compat) ───
+async function handleVidlinkProxy(request, url) {
+  const tp = url.pathname;
+  if (tp.includes('/api/mercury') || tp.includes('/api/venus')) {
+    return new Response("<script>console.log('ATMOS: blocked')</script>", {
+      status: 200, headers: { 'Content-Type': 'text/html', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
+  if (tp.endsWith('/fu.wasm')) {
+    return new Response(new Uint8Array([0,0x61,0x73,0x6d,1,0,0,0]), {
+      status: 200, headers: { 'Content-Type': 'application/wasm', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
+  if (tp === '/script.js') {
+    return new Response('window.getAdv=function(){return null};window.Dm=class{constructor(){this.importObject={}}run(){}};', {
+      status: 200, headers: { 'Content-Type': 'application/javascript', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
+  if (AD_DOMAINS.some(d => tp.includes(d))) {
+    return new Response('/* blocked */', {
+      status: 200, headers: { 'Content-Type': 'application/javascript', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
+
+  const targetUrl = 'https://vidlink.pro' + tp + url.search;
+  const h = new Headers(request.headers);
+  h.set('Host', 'vidlink.pro');
+  h.set('Origin', 'https://vidlink.pro');
+  h.set('Referer', 'https://vidlink.pro/');
+
+  try {
+    const res = await fetch(targetUrl, { method: request.method, headers: h, body: request.method !== 'GET' && request.method !== 'HEAD' ? request.body : undefined, redirect: 'follow' });
+    const rh = new Headers(res.headers);
+    rh.delete('X-Frame-Options');
+    rh.delete('Content-Security-Policy');
+    rh.set('Access-Control-Allow-Origin', '*');
+    const ct = rh.get('content-type') || '';
+
+    if (ct.includes('text/html') || ct.includes('javascript')) {
+      let text = await res.text();
+      text = text.replace(/https:\/\/vidlink\.pro/g, `https://${url.host}`);
+      text = text.replace(/fetch\(["']\/api\/mercury["']/g, 'fetch("/api/_dead"');
+      text = text.replace(/fetch\(["']\/api\/venus["']/g, 'fetch("/api/_dead"');
+      text = text.replace(/window\.aclib\.runPop\(/g, 'console.log("x",');
+      text = text.replace(/aclib\.runPop\(/g, 'console.log("x",');
+      text = text.replace(/\.hasAttribute\(["']sandbox["']\)/g, '.hasAttribute("x-never")');
+      text = text.replace(/\.getAttribute\(["']sandbox["']\)/g, '.getAttribute("x-never")');
+      text = text.replace(/Iframe Sandbox Detected/gi, 'ATMOS_OK');
+      text = text.replace(/sandbox restrictions/gi, 'atmos_ok');
+      text = text.replace(/\.sandbox\b/g, '.x_sb');
+      if (ct.includes('text/html')) {
+        const injection = getMasterProtectionScript(`https://${url.host}`, 'https://vidlink.pro');
+        text = text.replace('<head>', '<head>' + injection);
+      }
+      rh.delete('content-length');
+      return new Response(text, { status: res.status, headers: rh });
     }
-    
-    // Return standard response for media/binary data
-    return new Response(res.body, { status: res.status, headers: resHeaders });
-    
+    return new Response(res.body, { status: res.status, headers: rh });
   } catch (err) {
     return new Response(`Proxy Error: ${err.message}`, { status: 502 });
   }

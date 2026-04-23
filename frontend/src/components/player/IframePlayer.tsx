@@ -1,10 +1,13 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { SUBS_URL } from '@/lib/constants';
 import Spinner from '@/components/ui/Spinner';
+
+// The Cloudflare proxy URL — all embeds are routed through this
+const CF_PROXY = process.env.NEXT_PUBLIC_CF_PROXY_URL || 'https://atmos-proxy.nkp9450732628.workers.dev';
 
 interface IframePlayerProps {
   providers: { id: string; name: string; url: string; priority: number }[];
@@ -20,11 +23,12 @@ interface IframePlayerProps {
 /**
  * ATMOS V5.0 — Hardened IframePlayer
  * 
- * Defense layers:
- * 1. sandbox attribute blocks window.open, top navigation, form submissions
- * 2. Transparent click shield absorbs first click (the ad trigger), then removes itself
- * 3. CSP meta tag in parent prevents iframe from navigating parent
- * 4. beforeunload handler catches any remaining redirect attempts
+ * Defense layers (NO sandbox — it's detectable):
+ * 1. ALL embed URLs routed through Cloudflare proxy (?embed=URL)
+ * 2. Proxy injects undetectable JS overrides (popup kill, nav lock, ad strip)
+ * 3. Proxy rewrites all resource URLs to flow through itself
+ * 4. Transparent click shield absorbs first click, then self-destructs
+ * 5. beforeunload handler as final safety net
  */
 export default function IframePlayer({
   providers,
@@ -44,7 +48,16 @@ export default function IframePlayer({
   const hasErrorRef = useRef(false);
 
   const activeProvider = providers.find(p => p.id === activeProviderId);
-  const activeUrl = activeProvider?.url || '';
+  const rawUrl = activeProvider?.url || '';
+
+  // Route through Cloudflare proxy — this is the key bypass
+  // The proxy fetches the embed page, strips ads, injects protection JS
+  const activeUrl = useMemo(() => {
+    if (!rawUrl) return '';
+    // If already going through our proxy, don't double-wrap
+    if (rawUrl.includes(CF_PROXY) || rawUrl.includes('atmos-proxy')) return rawUrl;
+    return `${CF_PROXY}?embed=${encodeURIComponent(rawUrl)}`;
+  }, [rawUrl]);
 
   // Reset state when provider changes
   useEffect(() => {
@@ -127,7 +140,6 @@ export default function IframePlayer({
         src={activeUrl}
         className="absolute inset-0 w-full h-full border-none z-10"
         allowFullScreen
-        sandbox="allow-scripts allow-same-origin allow-presentation allow-forms"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
         referrerPolicy="no-referrer"
         onLoad={handleIframeLoad}
