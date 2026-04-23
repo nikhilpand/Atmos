@@ -6,7 +6,8 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeft, Download, Film, Tv, ChevronDown, ChevronRight, Loader2,
-  HardDrive, Globe, CheckCircle2, AlertCircle, Play, FileVideo
+  HardDrive, Globe, CheckCircle2, AlertCircle, Play, FileVideo, RefreshCw,
+  Server
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchTitle, type Episode, type Season } from '@/lib/api';
@@ -95,6 +96,10 @@ function StreamCard({ stream, title, type, season, episode, year, runtime }: {
             <span className="text-white/40 text-xs flex items-center gap-1">
               <HardDrive size={10} /> {size}
             </span>
+            <span className="text-white/20 text-xs">·</span>
+            <span className="text-cyan-400/60 text-xs flex items-center gap-1">
+              <Server size={10} /> {stream.provider}
+            </span>
             {stream.captions.length > 0 && (
               <>
                 <span className="text-white/20 text-xs">·</span>
@@ -119,9 +124,9 @@ function StreamCard({ stream, title, type, season, episode, year, runtime }: {
   );
 }
 
-// ─── Episode Download Row ───────────────────────────────────────────
-function EpisodeRow({ ep, titleName, year, onExtract, episodeStreams }: {
+function EpisodeRow({ ep, tmdbId, titleName, year, onExtract, episodeStreams }: {
   ep: Episode;
+  tmdbId: string;
   titleName: string;
   year: string;
   onExtract: (season: number, episode: number) => void;
@@ -211,6 +216,36 @@ function EpisodeRow({ ep, titleName, year, onExtract, episodeStreams }: {
                   runtime={ep.runtime}
                 />
               ))}
+            </div>
+          </motion.div>
+        )}
+        {expanded && status === 'done' && episodeStreams && episodeStreams.streams.length === 0 && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="flex flex-col items-center gap-3 py-6 px-3">
+              <AlertCircle size={24} className="text-white/15" />
+              <div className="text-center">
+                <p className="text-white/30 text-sm">No direct download links found</p>
+                <p className="text-white/15 text-[11px]">8 sources scanned. Try streaming instead.</p>
+              </div>
+              <div className="flex gap-2 mt-1">
+                <button
+                  onClick={(e) => { e.stopPropagation(); onExtract(ep.season_number, ep.episode_number); }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/50 hover:text-white text-xs font-medium transition-all"
+                >
+                  <RefreshCw size={11} /> Retry
+                </button>
+                <a
+                  href={`/watch/${tmdbId}?type=tv&season=${ep.season_number}&episode=${ep.episode_number}`}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 text-xs font-medium transition-all border border-violet-500/20"
+                >
+                  <Play size={11} /> Stream Episode
+                </a>
+              </div>
             </div>
           </motion.div>
         )}
@@ -396,15 +431,25 @@ function DownloadPageInner() {
         {/* ═══ Movie Download ═══ */}
         {mediaType === 'movie' && (
           <div className="space-y-3">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
               <h3 className="text-white/80 text-sm font-semibold flex items-center gap-2">
                 <Film size={14} className="text-violet-400" /> Available Downloads
               </h3>
-              {movieLoading && (
-                <span className="text-violet-400 text-xs flex items-center gap-1.5">
-                  <Loader2 size={12} className="animate-spin" /> Scanning sources...
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {movieLoading && (
+                  <span className="text-violet-400 text-xs flex items-center gap-1.5">
+                    <Loader2 size={12} className="animate-spin" /> Scanning 8 sources...
+                  </span>
+                )}
+                {!movieLoading && (
+                  <button
+                    onClick={() => { setMovieStreams([]); setMovieLoading(false); setTimeout(extractMovie, 100); }}
+                    className="flex items-center gap-1 px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/50 hover:text-white text-xs transition-all border border-white/5"
+                  >
+                    <RefreshCw size={11} /> Rescan
+                  </button>
+                )}
+              </div>
             </div>
 
             {movieStreams.length > 0 ? (
@@ -424,13 +469,28 @@ function DownloadPageInner() {
                   <div className="absolute inset-0 rounded-full border-2 border-white/5" />
                   <div className="absolute inset-0 rounded-full border-2 border-t-violet-500 animate-spin" />
                 </div>
-                <p className="text-white/40 text-sm">Extracting download links from all sources...</p>
+                <p className="text-white/40 text-sm">Scanning 8 sources in parallel...</p>
+                <p className="text-white/20 text-[11px]">VidSrc.to · Embed.su · VidSrc.icu · AutoEmbed · Videasy · VidSrc.cc · NonTongo · MovieWeb</p>
               </div>
             ) : (
-              <div className="flex flex-col items-center gap-3 py-16">
+              <div className="flex flex-col items-center gap-3 py-12">
                 <AlertCircle size={32} className="text-white/15" />
-                <p className="text-white/30 text-sm">No direct download links found for this title</p>
-                <p className="text-white/15 text-xs">Try streaming it from the watch page instead</p>
+                <p className="text-white/30 text-sm">No direct download links found</p>
+                <p className="text-white/15 text-xs mb-3">All 8 sources were scanned. This title may not be available yet.</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setMovieStreams([]); setMovieLoading(false); setTimeout(extractMovie, 100); }}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600/80 hover:bg-violet-600 text-white text-sm font-medium transition-all"
+                  >
+                    <RefreshCw size={13} /> Try Again
+                  </button>
+                  <button
+                    onClick={() => router.push(`/watch/${tmdbId}?type=movie`)}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white/70 text-sm font-medium transition-all border border-white/10"
+                  >
+                    <Play size={13} /> Stream Instead
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -477,6 +537,7 @@ function DownloadPageInner() {
                   <EpisodeRow
                     key={ep.id}
                     ep={ep}
+                    tmdbId={tmdbId}
                     titleName={displayTitle}
                     year={year}
                     onExtract={extractEpisode}
