@@ -67,6 +67,9 @@ export default function StreamPlayer({
         src={extraction.url}
         isHls={true}
         title={fileName}
+        qualities={extraction.allStreams}
+        selectedQuality={extraction.selectedQuality}
+        onQualityChange={extraction.setQuality}
         onFatalError={() => {
           // Fall through to iframe tier — handled by parent re-render
         }}

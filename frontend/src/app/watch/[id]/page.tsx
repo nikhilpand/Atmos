@@ -4,7 +4,7 @@
 import React, { useEffect, useState, Suspense, useCallback, useMemo } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Info, ChevronRight, Tv, Film, Server, Play, X } from 'lucide-react';
+import { ArrowLeft, Info, ChevronRight, Tv, Film, Server, Play, X, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import StreamPlayer from '@/components/player/StreamPlayer';
 import ProviderSelector from '@/components/player/ProviderSelector';
@@ -238,6 +238,15 @@ function WatchPageInner() {
                     <Info size={12} /> Details
                   </button>
                 )}
+
+                {/* Download */}
+                <button
+                  onClick={() => router.push(`/download/${tmdbId}?type=${mediaType}`)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-violet-600/30 hover:bg-violet-600/50 border border-violet-500/20 text-xs text-violet-300 hover:text-white transition-all"
+                >
+                  <Download size={12} />
+                  <span className="hidden sm:inline">Download</span>
+                </button>
               </div>
             </div>
 

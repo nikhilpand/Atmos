@@ -9,6 +9,7 @@ import {
   Keyboard,
 } from 'lucide-react';
 import Hls from 'hls.js';
+import QualitySelector from './QualitySelector';
 
 interface NativeVideoPlayerProps {
   src: string;
@@ -17,12 +18,16 @@ interface NativeVideoPlayerProps {
   onFatalError?: () => void;
   autoPlay?: boolean;
   onNextEpisode?: () => void;
+  qualities?: { url: string; quality: string }[];
+  selectedQuality?: string;
+  onQualityChange?: (quality: string) => void;
 }
 
 const PLAYBACK_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 export default function NativeVideoPlayer({
   src, isHls = false, title, onFatalError, autoPlay = true, onNextEpisode,
+  qualities = [], selectedQuality = 'auto', onQualityChange,
 }: NativeVideoPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -391,6 +396,15 @@ export default function NativeVideoPlayer({
                     </div>
                   )}
                 </div>
+
+                {/* Quality Selector */}
+                {qualities.length > 1 && onQualityChange && (
+                  <QualitySelector
+                    qualities={qualities}
+                    selectedQuality={selectedQuality}
+                    onSelect={onQualityChange}
+                  />
+                )}
 
                 {/* PiP */}
                 {'pictureInPictureEnabled' in document && (

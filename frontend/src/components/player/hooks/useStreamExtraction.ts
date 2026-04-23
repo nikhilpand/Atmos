@@ -4,11 +4,16 @@
 // Dual-mode extraction: server-side first (reliable), client fallback.
 // Includes AbortController timeout and structured state machine.
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { extractStreamClient, type MediaDetails } from '@/lib/movieWebClient';
 import { log } from '@/lib/logger';
 
 export type ExtractionStatus = 'idle' | 'loading' | 'success' | 'failed';
+
+export interface StreamOption {
+  url: string;
+  quality: string;
+}
 
 export interface ExtractionState {
   status: ExtractionStatus;
@@ -16,6 +21,9 @@ export interface ExtractionState {
   log: string;
   quality?: string;
   provider?: string;
+  allStreams: StreamOption[];
+  selectedQuality: string;
+  setQuality: (quality: string) => void;
 }
 
 interface UseStreamExtractionParams {
@@ -30,16 +38,28 @@ const EXTRACTION_TIMEOUT_MS = 20_000; // 20s hard timeout
 
 export function useStreamExtraction(params: UseStreamExtractionParams): ExtractionState {
   const { tmdbId, mediaType, season, episode, enabled } = params;
-  const [state, setState] = useState<ExtractionState>({
+  const [state, setState] = useState<Omit<ExtractionState, 'setQuality'>>({
     status: enabled && tmdbId ? 'loading' : 'idle',
     url: null,
     log: 'Locating stream…',
+    allStreams: [],
+    selectedQuality: 'auto',
   });
   const abortRef = useRef<AbortController | null>(null);
 
+  const setQuality = useCallback((quality: string) => {
+    setState(prev => {
+      const match = prev.allStreams.find(s => s.quality === quality);
+      if (match) {
+        return { ...prev, url: match.url, quality: match.quality, selectedQuality: quality };
+      }
+      return prev;
+    });
+  }, []);
+
   useEffect(() => {
     if (!enabled || !tmdbId) {
-      setState({ status: 'idle', url: null, log: '' });
+      setState({ status: 'idle', url: null, log: '', allStreams: [], selectedQuality: 'auto' });
       return;
     }
 
@@ -49,14 +69,14 @@ export function useStreamExtraction(params: UseStreamExtractionParams): Extracti
     abortRef.current = controller;
     let mounted = true;
 
-    const update = (partial: Partial<ExtractionState>) => {
+    const update = (partial: Partial<Omit<ExtractionState, 'setQuality'>>) => {
       if (mounted && !controller.signal.aborted) {
         setState(prev => ({ ...prev, ...partial }));
       }
     };
 
     async function run() {
-      update({ status: 'loading', url: null, log: 'Fetching metadata…' });
+      update({ status: 'loading', url: null, log: 'Fetching metadata…', allStreams: [], selectedQuality: 'auto' });
 
       // Timeout guard
       const timeout = setTimeout(() => {
@@ -104,14 +124,17 @@ export function useStreamExtraction(params: UseStreamExtractionParams): Extracti
           if (serverRes.ok) {
             const serverData = await serverRes.json();
             if (serverData.url) {
+              const streams = serverData.allStreams || [{ url: serverData.url, quality: serverData.quality || 'auto' }];
               update({
                 status: 'success',
                 url: serverData.url,
                 log: 'Stream found!',
                 quality: serverData.quality,
                 provider: serverData.provider,
+                allStreams: streams,
+                selectedQuality: serverData.quality || 'auto',
               });
-              log.info('[Hook] Server extraction succeeded', { tmdbId, quality: serverData.quality });
+              log.info('[Hook] Server extraction succeeded', { tmdbId, quality: serverData.quality, streamCount: streams.length });
               return;
             }
           }
@@ -145,6 +168,8 @@ export function useStreamExtraction(params: UseStreamExtractionParams): Extracti
             url: clientUrl,
             log: 'Stream found!',
             quality: 'auto',
+            allStreams: [{ url: clientUrl, quality: 'auto' }],
+            selectedQuality: 'auto',
           });
         } else {
           update({ status: 'failed', log: 'No streams available' });
@@ -168,5 +193,5 @@ export function useStreamExtraction(params: UseStreamExtractionParams): Extracti
     };
   }, [tmdbId, mediaType, season, episode, enabled]);
 
-  return state;
+  return { ...state, setQuality };
 }

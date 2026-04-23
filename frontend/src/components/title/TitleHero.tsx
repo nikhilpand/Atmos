@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Play, Plus, Star, Clock, Calendar, Check, Globe } from 'lucide-react';
+import { Play, Plus, Star, Clock, Calendar, Check, Globe, Download } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { backdropUrl, type TMDBDetail } from '@/lib/api';
 
@@ -132,6 +132,16 @@ export default function TitleHero({ detail, mediaType, isInWatchlist, onToggleWa
                     <Play size={18} fill="currentColor" /> Play
                   </motion.button>
                 </div>
+              </Link>
+
+              <Link href={`/download/${id}?type=${mediaType}`}>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  className="flex items-center gap-2 px-6 py-3.5 bg-violet-600/80 text-white backdrop-blur-md font-bold rounded-full hover:bg-violet-500 transition-all border border-violet-400/20 text-sm shadow-xl shadow-violet-600/20"
+                >
+                  <Download size={16} /> Download
+                </motion.button>
               </Link>
 
               {onToggleWatchlist && (

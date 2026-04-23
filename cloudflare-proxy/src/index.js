@@ -111,16 +111,36 @@ async function handleVidlinkProxy(request, url) {
   // These endpoints serve the ad libraries. Return empty/neutered JS.
   // ═══════════════════════════════════════════════════════════════════
   if (targetPath.includes('/api/mercury') || targetPath.includes('/api/venus')) {
-    // Return a fake response that looks like a valid but empty script tag
-    // so the parsing code (which expects <script>...</script>) finds nothing harmful
     return new Response("<script>console.log('ATMOS: ad endpoint neutralized')</script>", {
       status: 200,
       headers: { 'Content-Type': 'text/html', 'Access-Control-Allow-Origin': '*' }
     });
   }
 
-  // Block known ad CDN domains
-  if (targetPath.includes('popads') || targetPath.includes('dcbbwymp') || targetPath.includes('cloudfront.net')) {
+  // Block the WASM ad engine — return minimal valid WASM (8 bytes = magic + version)
+  if (targetPath.endsWith('/fu.wasm')) {
+    const minimalWasm = new Uint8Array([0x00,0x61,0x73,0x6d, 0x01,0x00,0x00,0x00]);
+    return new Response(minimalWasm, {
+      status: 200,
+      headers: { 'Content-Type': 'application/wasm', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
+
+  // Block script.js (WASM loader + getAdv definer) — return neutered version
+  if (targetPath === '/script.js') {
+    return new Response(`
+      // ATMOS: Neutered ad loader
+      window.getAdv = function() { return null; };
+      window.Dm = class { constructor() { this.importObject = {}; } run() {} };
+      console.log('ATMOS: Ad loader neutralized');
+    `, {
+      status: 200,
+      headers: { 'Content-Type': 'application/javascript', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
+
+  // Block known ad CDN domains and patterns
+  if (targetPath.includes('popads') || targetPath.includes('dcbbwymp') || targetPath.includes('cloudfront.net') || targetPath.includes('adcash')) {
     return new Response("/* ATMOS: blocked */", {
       status: 200,
       headers: { 'Content-Type': 'application/javascript', 'Access-Control-Allow-Origin': '*' }
@@ -223,10 +243,20 @@ async function handleVidlinkProxy(request, url) {
 
       // ── HTML-SPECIFIC: Inject our master protection script at the top ──
       if (contentType.includes('text/html')) {
-        const masterScript = `<script>
+        const masterScript = `<style>
+/* ATMOS: Hide all ad containers */
+[class*="banner"], [class*="adcash"], [id*="adcash"], [class*="ad-container"],
+[class*="ad-overlay"], [class*="popup"], [data-adcash], [id*="popads"],
+iframe[src*="adcash"], iframe[src*="cloudfront"], div[style*="z-index: 9999"],
+div[style*="z-index:9999"], div[style*="z-index: 2147"] { display:none!important; visibility:hidden!important; }
+</style>
+<script>
 // ═══ ATMOS Master Protection Layer ═══
-// Override window.open BEFORE any other script runs
 (function() {
+  // Kill the ad data provider function
+  window.getAdv = function() { return null; };
+  Object.defineProperty(window, 'getAdv', { value: function(){return null}, writable: false, configurable: false });
+  
   // Block ALL popups
   window.open = function() { return null; };
   
@@ -269,6 +299,26 @@ async function handleVidlinkProxy(request, url) {
     if (type === 'beforeunload') return;
     return origAddEventListener.call(this, type, fn, opts);
   };
+  
+  // MutationObserver: auto-remove any ad elements injected after page load
+  var observer = new MutationObserver(function(mutations) {
+    mutations.forEach(function(m) {
+      m.addedNodes.forEach(function(node) {
+        if (node.nodeType !== 1) return;
+        var el = node;
+        var id = (el.id || '').toLowerCase();
+        var cls = (el.className || '').toString().toLowerCase();
+        if (id.includes('adcash') || id.includes('popads') || cls.includes('adcash') || cls.includes('banner')) {
+          el.remove();
+        }
+        // Remove injected iframes from ad scripts
+        if (el.tagName === 'IFRAME' && el.src && (el.src.includes('adcash') || el.src.includes('cloudfront'))) {
+          el.remove();
+        }
+      });
+    });
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
 })();
 </script>`;
         text = text.replace('<head>', '<head>' + masterScript);

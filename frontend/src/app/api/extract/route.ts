@@ -39,23 +39,29 @@ interface StreamOutput {
   qualities?: Record<string, StreamQuality>;
 }
 
-function extractUrl(stream: unknown): { url: string | null; quality: string } {
-  if (!stream || typeof stream !== 'object') return { url: null, quality: 'unknown' };
+function extractUrl(stream: unknown): { url: string | null; quality: string; allStreams: { url: string; quality: string }[] } {
+  if (!stream || typeof stream !== 'object') return { url: null, quality: 'unknown', allStreams: [] };
   const s = stream as StreamOutput;
+  const allStreams: { url: string; quality: string }[] = [];
 
-  if (typeof s.playlist === 'string' && s.playlist) return { url: s.playlist, quality: 'auto' };
-  if (typeof s.url === 'string' && s.url) return { url: s.url, quality: 'auto' };
-
-  if (s.qualities && typeof s.qualities === 'object') {
-    // Try quality tiers: 1080, 720, 480, auto, then first available
-    for (const q of ['1080', '720', '480', 'auto']) {
-      if (s.qualities[q]?.url) return { url: s.qualities[q].url!, quality: q + 'p' };
-    }
-    const first = Object.entries(s.qualities)[0];
-    if (first?.[1]?.url) return { url: first[1].url, quality: first[0] };
+  if (typeof s.playlist === 'string' && s.playlist) {
+    allStreams.push({ url: s.playlist, quality: 'auto' });
+  }
+  if (typeof s.url === 'string' && s.url) {
+    allStreams.push({ url: s.url, quality: 'auto' });
   }
 
-  return { url: null, quality: 'unknown' };
+  if (s.qualities && typeof s.qualities === 'object') {
+    for (const [q, data] of Object.entries(s.qualities)) {
+      if (data?.url) {
+        allStreams.push({ url: data.url, quality: q.includes('p') ? q : q + 'p' });
+      }
+    }
+  }
+
+  // Best stream = first HLS playlist, or highest quality MP4
+  const best = allStreams[0] || { url: null, quality: 'unknown' };
+  return { url: best.url, quality: best.quality, allStreams };
 }
 
 export async function POST(request: NextRequest) {
@@ -93,7 +99,7 @@ export async function POST(request: NextRequest) {
 
     if (output?.stream) {
       const stream = Array.isArray(output.stream) ? output.stream[0] : output.stream;
-      const { url, quality } = extractUrl(stream);
+      const { url, quality, allStreams } = extractUrl(stream);
 
       const result: ExtractResult = {
         url,
@@ -104,10 +110,10 @@ export async function POST(request: NextRequest) {
 
       if (url) {
         extractCache.set(cacheKey, result);
-        log.info('[Extract:Server] Success', { tmdbId, quality, provider: result.provider });
+        log.info('[Extract:Server] Success', { tmdbId, quality, provider: result.provider, streamCount: allStreams.length });
       }
 
-      return NextResponse.json({ ...result, fromCache: false });
+      return NextResponse.json({ ...result, allStreams, fromCache: false });
     }
 
     log.warn('[Extract:Server] No stream found', { tmdbId, type });
