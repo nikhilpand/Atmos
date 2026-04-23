@@ -1,7 +1,12 @@
-// ─── ATMOS V2.0 — Cloudflare Worker Proxy ──────────────────────────────
+// ─── ATMOS V3.0 — Cloudflare Worker: Nuclear Ad-Block Proxy ────────────
 // Dual Purpose Proxy:
 // 1. CORS Proxy for @movie-web/providers (when ?destination= is passed)
 // 2. Ad-Free Reverse Proxy for Vidlink.pro (when no destination is passed)
+//
+// This version performs DEEP rewriting of ALL JS bundles to:
+//   - Strip ad library fetching (mercury, venus, popads, aclib, cloudfront ad CDN)
+//   - Neuter sandbox detection (multiple detection vectors)
+//   - Block window.open, top-navigation, and target=_blank
 
 const HEADER_MAP = {
   'x-cookie': 'cookie',
@@ -101,19 +106,32 @@ async function handleGenericProxy(request, destination) {
 async function handleVidlinkProxy(request, url) {
   const targetPath = url.pathname;
   
-  // 1. HARDCORE AD BLOCKING
-  // Vidlink loads "Adcash" from /api/mercury and "PopAds" from /api/venus
-  if (targetPath.includes('/api/mercury') || targetPath.includes('/api/venus') || targetPath.includes('popads')) {
-    return new Response("console.log('ATMOS Ad-Blocker: Neutralized Popup Script');", {
+  // ═══════════════════════════════════════════════════════════════════
+  // LAYER 1: BLOCK AD API ENDPOINTS COMPLETELY
+  // These endpoints serve the ad libraries. Return empty/neutered JS.
+  // ═══════════════════════════════════════════════════════════════════
+  if (targetPath.includes('/api/mercury') || targetPath.includes('/api/venus')) {
+    // Return a fake response that looks like a valid but empty script tag
+    // so the parsing code (which expects <script>...</script>) finds nothing harmful
+    return new Response("<script>console.log('ATMOS: ad endpoint neutralized')</script>", {
+      status: 200,
+      headers: { 'Content-Type': 'text/html', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
+
+  // Block known ad CDN domains
+  if (targetPath.includes('popads') || targetPath.includes('dcbbwymp') || targetPath.includes('cloudfront.net')) {
+    return new Response("/* ATMOS: blocked */", {
       status: 200,
       headers: { 'Content-Type': 'application/javascript', 'Access-Control-Allow-Origin': '*' }
     });
   }
 
-  // 2. Construct target URL
+  // ═══════════════════════════════════════════════════════════════════
+  // LAYER 2: PROXY THE REQUEST TO VIDLINK
+  // ═══════════════════════════════════════════════════════════════════
   const targetUrl = 'https://vidlink.pro' + targetPath + url.search;
   
-  // 3. Prepare proxy request headers
   const proxyReqHeaders = new Headers(request.headers);
   proxyReqHeaders.set('Host', 'vidlink.pro');
   proxyReqHeaders.set('Origin', 'https://vidlink.pro');
@@ -135,44 +153,129 @@ async function handleVidlinkProxy(request, url) {
   try {
     const res = await fetch(proxyReq);
     
-    // 4. Strip security headers that prevent iframe embedding
+    // Strip security headers that prevent iframe embedding
     const resHeaders = new Headers(res.headers);
     resHeaders.delete('X-Frame-Options');
     resHeaders.delete('Content-Security-Policy');
     resHeaders.delete('frame-ancestors');
-    
-    // Add CORS
     resHeaders.set('Access-Control-Allow-Origin', '*');
 
-    // 5. Rewrite HTML absolute URLs to point to our proxy
     const contentType = resHeaders.get('content-type') || '';
-    if (contentType.includes('text/html') || contentType.includes('application/javascript') || contentType.includes('text/javascript')) {
+
+    // ═══════════════════════════════════════════════════════════════════
+    // LAYER 3: DEEP REWRITE HTML AND ALL JS BUNDLES
+    // ═══════════════════════════════════════════════════════════════════
+    if (contentType.includes('text/html') || contentType.includes('javascript')) {
       let text = await res.text();
-      // Replace absolute URLs
+      
+      // --- URL Rewriting: Make all vidlink.pro URLs point to our proxy ---
       text = text.replace(/https:\/\/vidlink\.pro/g, `https://${url.host}`);
       
+      // ── NUCLEAR AD REMOVAL (works on both HTML inline scripts AND JS bundles) ──
+      
+      // 1. Kill the Adcash component (module 4883) — fetch("/api/mercury"...) 
+      //    Replace the entire fetch-and-inject logic with a no-op
+      text = text.replace(/fetch\(["']\/api\/mercury["']/g, 'fetch("/api/_blocked_mercury"');
+      text = text.replace(/fetch\(["']\/api\/venus["']/g, 'fetch("/api/_blocked_venus"');
+      
+      // 2. Kill aclib.runPop calls
+      text = text.replace(/window\.aclib\.runPop\(/g, 'console.log("ATMOS:blocked",');
+      text = text.replace(/aclib\.runPop\(/g, 'console.log("ATMOS:blocked",');
+      
+      // 3. Kill the CloudFront ad script injection  
+      text = text.replace(/dcbbwymp1bhlf\.cloudfront\.net/g, 'localhost');
+      
+      // 4. Kill popads script ID references
+      text = text.replace(/"popads-script"/g, '"atmos-blocked"');
+      
+      // ── SANDBOX DETECTION NEUTRALIZATION ──
+      
+      // Strategy: Replace the sandbox detector function body.
+      // The detector sets document.body.innerHTML to show "Please Disable Sandbox"
+      // We need to neuter ALL the detection vectors:
+      
+      // Vector 1: frameElement.hasAttribute("sandbox") check
+      text = text.replace(/\.hasAttribute\(["']sandbox["']\)/g, '.hasAttribute("atmos-never-match")');
+      
+      // Vector 2: The error message display function
+      // Pattern: console.log("Sandboxed iframe detected"),document.body.innerHTML='...'
+      text = text.replace(
+        /console\.log\(["']Sandboxed iframe detected["']\)/g,
+        'console.log("ATMOS: sandbox check bypassed")'
+      );
+      text = text.replace(
+        /document\.body\.innerHTML='<div[^']*Please Disable Sandbox[^']*>'/g,
+        'console.log("ATMOS: sandbox noop")'
+      );
+      
+      // Vector 3: The document.domain assignment test
+      // When sandboxed, setting document.domain throws; they catch it and check for "sandbox" in the error
+      text = text.replace(
+        /\.toString\(\)\.toLowerCase\(\)\.includes\(["']sandbox["']\)/g,
+        '.toString().toLowerCase().includes("atmos-never-match")'
+      );
+      
+      // Vector 4: Chrome PDF Viewer plugin test (sandbox blocks plugins)
+      text = text.replace(
+        /navigator\.plugins\.namedItem\(["']Chrome PDF Viewer["']\)/g,
+        'true /* ATMOS: PDF check bypassed */'
+      );
+
+      // ── HTML-SPECIFIC: Inject our master protection script at the top ──
       if (contentType.includes('text/html')) {
-        const adBlockScript = `<script>
-          // ATMOS Aggressive Popup & Redirect Blocker
-          window.open = function() { console.log('ATMOS blocked window.open'); return null; };
-          // Disable top level navigation
-          Object.defineProperty(window, 'top', { value: window, writable: false, configurable: false });
-          document.addEventListener('click', function(e) {
-            const link = e.target.closest('a');
-            if (link && link.target === '_blank') {
-              e.preventDefault();
-              console.log('ATMOS blocked target=_blank click');
-            }
-          }, true);
-        </script>`;
-        text = text.replace('<head>', '<head>' + adBlockScript);
+        const masterScript = `<script>
+// ═══ ATMOS Master Protection Layer ═══
+// Override window.open BEFORE any other script runs
+(function() {
+  // Block ALL popups
+  window.open = function() { return null; };
+  
+  // Prevent scripts from detecting they're in a sandbox
+  try {
+    Object.defineProperty(window, 'frameElement', {
+      get: function() { return null; },
+      configurable: false
+    });
+  } catch(e) {}
+  
+  // Block top-level navigation
+  try {
+    Object.defineProperty(window, 'top', { value: window, writable: false, configurable: false });
+  } catch(e) {}
+  
+  // Intercept ALL click events that try to open new tabs
+  document.addEventListener('click', function(e) {
+    var a = e.target.closest ? e.target.closest('a') : null;
+    if (a && (a.target === '_blank' || a.href && a.href.indexOf(window.location.hostname) === -1)) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      return false;
+    }
+  }, true);
+  
+  // Block form submissions to external URLs
+  document.addEventListener('submit', function(e) {
+    var form = e.target;
+    if (form.action && form.action.indexOf(window.location.hostname) === -1) {
+      e.preventDefault();
+      return false;
+    }
+  }, true);
+  
+  // Neuter beforeunload handlers from ad scripts
+  var origAddEventListener = EventTarget.prototype.addEventListener;
+  EventTarget.prototype.addEventListener = function(type, fn, opts) {
+    if (type === 'beforeunload') return;
+    return origAddEventListener.call(this, type, fn, opts);
+  };
+})();
+</script>`;
+        text = text.replace('<head>', '<head>' + masterScript);
       }
 
-      if (contentType.includes('application/javascript') || contentType.includes('text/javascript')) {
-        // Neuter Vidlink's sandbox detector so we can safely use the sandbox attribute
-        text = text.replace(/console\.log\("Sandboxed iframe detected"\),document\.body\.innerHTML='<div[^>]*><h1>Please Disable Sandbox<\/h1><\/div>'/g, 'console.log("ATMOS: Sandbox check bypassed")');
-      }
-
+      // Remove content-length since we changed the body
+      resHeaders.delete('content-length');
       return new Response(text, { status: res.status, headers: resHeaders });
     }
     
