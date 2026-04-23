@@ -19,9 +19,7 @@ echo "📦 Pushing to GitHub..."
 git push origin main
 
 echo "🌐 Deploying Frontend via Vercel CLI..."
-cd frontend
 npx vercel --prod --yes
-cd ..
 
 echo "🤖 Triggering Hugging Face Deployment via GitHub Actions..."
 gh workflow run deploy.yml --ref main

@@ -54,3 +54,5 @@ Thumbs.db
 # ─── Agent / Graph ───
 .agent/
 graphify-out/
+.vercel
+.env*.local
