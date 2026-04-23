@@ -36,10 +36,9 @@ const RESPONSE_HEADER_MAP: Record<string, string> = {
 
 const STRIP_HEADERS = new Set(['content-encoding', 'content-length', 'transfer-encoding']);
 
-// ─── CORS ──────────────────────────────────────────────────────────
 const ALLOWED_ORIGINS = [
   'https://atmos.page.gd',
-  'https://frontend-one-teal-19.vercel.app',
+  'https://atmos.vercel.app',
   'http://localhost:3000',
   'http://localhost:5500',
 ];

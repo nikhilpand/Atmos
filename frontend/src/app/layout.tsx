@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   },
   description: "ATMOS is a zero-buffering, ad-free streaming platform with 10+ providers, instant playback, and a Netflix-grade experience for movies, TV shows, and anime.",
   keywords: ["streaming", "movies", "tv shows", "anime", "free streaming", "ATMOS", "watch online"],
-  metadataBase: new URL("https://atmos-streaming.vercel.app"),
+  metadataBase: new URL("https://atmos.vercel.app"),
   openGraph: {
     title: "ATMOS — Stream Movies, TV Shows & Anime",
     description: "Zero-buffering streaming with parallel provider racing. Watch anything, anywhere.",

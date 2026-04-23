@@ -71,7 +71,7 @@ ALLOWED_ORIGINS = [
     "https://atmos.page.gd",
     "http://localhost:5500",
     "http://127.0.0.1:5500",
-    "https://frontend-one-teal-19.vercel.app",
+    "https://atmos.vercel.app",
 ]
 fastapi_app.add_middleware(
     CORSMiddleware,
