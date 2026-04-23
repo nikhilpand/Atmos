@@ -38,7 +38,7 @@ const STRIP_HEADERS = new Set(['content-encoding', 'content-length', 'transfer-e
 
 const ALLOWED_ORIGINS = [
   'https://atmos.page.gd',
-  'https://atmos.vercel.app',
+  'https://atmos-coral-sigma.vercel.app',
   'http://localhost:3000',
   'http://localhost:5500',
 ];
