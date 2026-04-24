@@ -42,7 +42,8 @@ app.add_middleware(
 # ═══════════════════════════════════════════════════════════════════════
 
 PROVIDERS = [
-    {"id": "vidlink", "name": "VidLink", "pattern": "https://vidlink.pro/{type}/{tmdb_id}", "style": "path"},
+    {"id": "vidlink", "name": "VidLink", "pattern": "https://atmos-proxy.nkp9450732628.workers.dev/{type}/{tmdb_id}", "style": "path"},
+    {"id": "vidlink_jw", "name": "VidLink JW", "pattern": "https://atmos-proxy.nkp9450732628.workers.dev/{type}/{tmdb_id}", "style": "path"},
     {"id": "vidsrc_icu", "name": "VidSrc ICU", "pattern": "https://vidsrc.icu/embed/{type}/{tmdb_id}", "style": "path"},
     {"id": "videasy", "name": "Videasy", "pattern": "https://player.videasy.net/{type}/{tmdb_id}", "style": "path"},
     {"id": "nontongo", "name": "NonTongo", "pattern": "https://nontongo.win/embed/{type}/{tmdb_id}", "style": "path"},

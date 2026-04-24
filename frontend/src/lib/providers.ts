@@ -42,13 +42,25 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     lastChecked: 0,
   },
   {
+    id: "vidlink_jw",
+    name: "VidLink JW Player",
+    slug: "vidlink-jw",
+    urlPattern: "https://atmos-proxy.nkp9450732628.workers.dev/{type}/{tmdb_id}",
+    urlStyle: 'path',
+    enabled: true,
+    priority: 2,
+    healthScore: 98,
+    failCount: 0,
+    lastChecked: 0,
+  },
+  {
     id: "vidsrc_icu",
     name: "VidSrc ICU",
     slug: "vidsrc-icu",
     urlPattern: "https://vidsrc.icu/embed/{type}/{tmdb_id}",
     urlStyle: 'path',
     enabled: true,
-    priority: 2,
+    priority: 3,
     healthScore: 98,
     failCount: 0,
     lastChecked: 0,
@@ -60,7 +72,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     urlPattern: "https://player.videasy.net/{type}/{tmdb_id}",
     urlStyle: 'path',
     enabled: true,
-    priority: 3,
+    priority: 4,
     healthScore: 95,
     failCount: 0,
     lastChecked: 0,
@@ -72,7 +84,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     urlPattern: "https://nontongo.win/embed/{type}/{tmdb_id}",
     urlStyle: 'path',
     enabled: true,
-    priority: 4,
+    priority: 5,
     healthScore: 92,
     failCount: 0,
     lastChecked: 0,
@@ -86,7 +98,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     urlPattern: "https://vidjoy.pro/embed/{type}/{tmdb_id}",
     urlStyle: 'path',
     enabled: true,
-    priority: 5,
+    priority: 6,
     healthScore: 88,
     failCount: 0,
     lastChecked: 0,
@@ -98,7 +110,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     urlPattern: "https://vidfast.pro/{type}/{tmdb_id}",
     urlStyle: 'path',
     enabled: true,
-    priority: 6,
+    priority: 7,
     healthScore: 85,
     failCount: 0,
     lastChecked: 0,
@@ -110,7 +122,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     urlPattern: "https://autoembed.co/{type}/tmdb/{tmdb_id}",
     urlStyle: 'dash',
     enabled: true,
-    priority: 7,
+    priority: 8,
     healthScore: 82,
     failCount: 0,
     lastChecked: 0,
@@ -122,7 +134,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     urlPattern: "https://www.2embed.cc/embed/{type}/{tmdb_id}",
     urlStyle: 'custom',
     enabled: true,
-    priority: 8,
+    priority: 9,
     healthScore: 80,
     failCount: 0,
     lastChecked: 0,
@@ -134,7 +146,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     urlPattern: "https://moviesapi.club/{type}/{tmdb_id}",
     urlStyle: 'dash',
     enabled: true,
-    priority: 9,
+    priority: 10,
     healthScore: 75,
     failCount: 0,
     lastChecked: 0,
@@ -148,7 +160,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     urlPattern: "https://vidsrc.xyz/embed/{type}/{tmdb_id}",
     urlStyle: 'path',
     enabled: true,
-    priority: 10,
+    priority: 11,
     healthScore: 60,
     failCount: 0,
     lastChecked: 0,
@@ -160,7 +172,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     urlPattern: "https://vidsrc.me/embed/{type}?tmdb={tmdb_id}",
     urlStyle: 'query',
     enabled: true,
-    priority: 11,
+    priority: 12,
     healthScore: 55,
     failCount: 0,
     lastChecked: 0,
@@ -172,7 +184,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     urlPattern: "https://embed.su/embed/{type}/{tmdb_id}",
     urlStyle: 'path',
     enabled: true,
-    priority: 12,
+    priority: 13,
     healthScore: 50,
     failCount: 0,
     lastChecked: 0,
@@ -184,7 +196,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     urlPattern: "https://vidsrc.cc/v2/embed/{type}/{tmdb_id}",
     urlStyle: 'path',
     enabled: true,
-    priority: 13,
+    priority: 14,
     healthScore: 45,
     failCount: 0,
     lastChecked: 0,
@@ -196,7 +208,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     urlPattern: "https://multiembed.mov/?video_id={tmdb_id}&tmdb=1",
     urlStyle: 'query',
     enabled: true,
-    priority: 14,
+    priority: 15,
     healthScore: 40,
     failCount: 0,
     lastChecked: 0,
@@ -208,7 +220,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     urlPattern: "https://vidsrc.in/embed/{type}/{tmdb_id}",
     urlStyle: 'path',
     enabled: true,
-    priority: 15,
+    priority: 16,
     healthScore: 35,
     failCount: 0,
     lastChecked: 0,
@@ -216,6 +228,12 @@ export const DEFAULT_PROVIDERS: Provider[] = [
 ];
 
 // ─── URL Builder ────────────────────────────────────────────────────
+// VidLink customization params for ad-free, fully-featured playback
+const VIDLINK_PARAMS = {
+  default: 'primaryColor=8b5cf6&secondaryColor=1e1e2e&iconColor=ffffff&icons=vid&title=true&poster=true&autoplay=true&nextbutton=true',
+  jw: 'primaryColor=8b5cf6&secondaryColor=1e1e2e&iconColor=ffffff&icons=vid&player=jw&title=true&poster=true&autoplay=true&nextbutton=true',
+};
+
 export function buildProviderUrl(
   provider: Provider,
   tmdbId: string,
@@ -232,6 +250,11 @@ export function buildProviderUrl(
     // Special case: 2embed movie URL
     if (provider.id === '2embed') {
       return `https://www.2embed.cc/embed/${tmdbId}`;
+    }
+    // Add VidLink customization params
+    if (provider.id === 'vidlink' || provider.id === 'vidlink_jw') {
+      const params = provider.id === 'vidlink_jw' ? VIDLINK_PARAMS.jw : VIDLINK_PARAMS.default;
+      url += `?${params}`;
     }
     return url;
   }
@@ -272,6 +295,12 @@ export function buildProviderUrl(
 
     default:
       url += `/${season}/${episode}`;
+  }
+
+  // Add VidLink customization params (after season/episode are appended)
+  if (provider.id === 'vidlink' || provider.id === 'vidlink_jw') {
+    const params = provider.id === 'vidlink_jw' ? VIDLINK_PARAMS.jw : VIDLINK_PARAMS.default;
+    url += (url.includes('?') ? '&' : '?') + params;
   }
 
   return url;

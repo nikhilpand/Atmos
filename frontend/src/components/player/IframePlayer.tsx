@@ -1,13 +1,11 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertTriangle, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, RefreshCw, ShieldCheck } from 'lucide-react';
 import { SUBS_URL } from '@/lib/constants';
+import AdBlockerOverlay from './AdBlockerOverlay';
 import Spinner from '@/components/ui/Spinner';
-
-// The Cloudflare proxy URL — all embeds are routed through this
-const CF_PROXY = process.env.NEXT_PUBLIC_CF_PROXY_URL || 'https://atmos-proxy.nkp9450732628.workers.dev';
 
 interface IframePlayerProps {
   providers: { id: string; name: string; url: string; priority: number }[];
@@ -21,14 +19,8 @@ interface IframePlayerProps {
 }
 
 /**
- * ATMOS V5.0 — Hardened IframePlayer
- * 
- * Defense layers (NO sandbox — it's detectable):
- * 1. ALL embed URLs routed through Cloudflare proxy (?embed=URL)
- * 2. Proxy injects undetectable JS overrides (popup kill, nav lock, ad strip)
- * 3. Proxy rewrites all resource URLs to flow through itself
- * 4. Transparent click shield absorbs first click, then self-destructs
- * 5. beforeunload handler as final safety net
+ * Sandboxed iframe player with ad-blocking overlay, auto-failover, and health reporting.
+ * Uses `sandbox` attribute to block popups (replaces the window.open hack).
  */
 export default function IframePlayer({
   providers,
@@ -42,59 +34,91 @@ export default function IframePlayer({
 }: IframePlayerProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
-  const [clickShieldActive, setClickShieldActive] = useState(true);
+  const [adBlockActive, setAdBlockActive] = useState(true);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Use ref for error state to avoid stale closure in handleIframeLoad
   const hasErrorRef = useRef(false);
 
   const activeProvider = providers.find(p => p.id === activeProviderId);
-  const rawUrl = activeProvider?.url || '';
+  const activeUrl = activeProvider?.url || '';
 
-  // Route through Cloudflare proxy — this is the key bypass
-  // The proxy fetches the embed page, strips ads, injects protection JS
-  const activeUrl = useMemo(() => {
-    if (!rawUrl) return '';
-    // If already going through our proxy, don't double-wrap
-    if (rawUrl.includes(CF_PROXY) || rawUrl.includes('atmos-proxy')) return rawUrl;
-    return `${CF_PROXY}?embed=${encodeURIComponent(rawUrl)}`;
-  }, [rawUrl]);
-
-  // Reset state when provider changes
   useEffect(() => {
     setIsLoading(true);
     setHasError(false);
     hasErrorRef.current = false;
-    setClickShieldActive(true);
+    setAdBlockActive(true);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => setIsLoading(false), 8000);
     return () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); };
   }, [activeProviderId]);
 
-  // Catch any top-level navigation attempts from ad scripts
+  // Anti-Redirect Protection: Intercept ad scripts trying to navigate the top window
   useEffect(() => {
-    const prevent = (e: BeforeUnloadEvent) => {
+    const preventRedirect = (e: BeforeUnloadEvent) => {
+      // Browsers require preventDefault and returnValue to show the confirmation dialog
       e.preventDefault();
-      e.returnValue = '';
-      return '';
+      e.returnValue = 'An ad tried to redirect you. Stay on this page to continue watching.';
+      return e.returnValue;
     };
-    window.addEventListener('beforeunload', prevent);
-    return () => window.removeEventListener('beforeunload', prevent);
+    window.addEventListener('beforeunload', preventRedirect);
+    return () => window.removeEventListener('beforeunload', preventRedirect);
   }, []);
 
-  const reportHealth = useCallback((success: boolean) => {
+  // ── VidLink Watch Progress & Player Events ──
+  // Captures postMessage events from VidLink embedded player for:
+  //   - MEDIA_DATA: Watch progress tracking (continue watching feature)
+  //   - PLAYER_EVENT: Player state changes (play, pause, seeked, ended, timeupdate)
+  useEffect(() => {
+    const PROXY_ORIGIN = 'https://atmos-proxy.nkp9450732628.workers.dev';
+
+    const handleMessage = (event: MessageEvent) => {
+      // Only accept messages from our proxy
+      if (event.origin !== PROXY_ORIGIN) return;
+
+      // Watch progress data (continue watching feature)
+      if (event.data?.type === 'MEDIA_DATA') {
+        try {
+          const mediaData = event.data.data;
+          localStorage.setItem('vidLinkProgress', JSON.stringify(mediaData));
+        } catch { /* localStorage full or unavailable */ }
+      }
+
+      // Player events (play, pause, seeked, ended, timeupdate)
+      if (event.data?.type === 'PLAYER_EVENT') {
+        const { event: eventType, currentTime, duration } = event.data.data;
+        // Calculate progress percentage for the history store
+        if (eventType === 'timeupdate' && duration > 0) {
+          const progressPct = Math.round((currentTime / duration) * 100);
+          // Emit a custom event so the watch page can update history
+          window.dispatchEvent(new CustomEvent('atmos:progress', {
+            detail: { tmdbId, mediaType, season, episode, progress: progressPct, currentTime, duration }
+          }));
+        }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [tmdbId, mediaType, season, episode]);
+
+  const reportHealth = (success: boolean) => {
     if (!tmdbId || !activeProviderId) return;
     fetch(`${SUBS_URL}/provider-report`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        tmdb_id: tmdbId, type: mediaType || 'movie',
-        season: season || 0, episode: episode || 0,
-        provider_id: activeProviderId, success,
+        tmdb_id: tmdbId,
+        type: mediaType || 'movie',
+        season: season || 0,
+        episode: episode || 0,
+        provider_id: activeProviderId,
+        success,
       }),
-    }).catch(() => {});
-  }, [tmdbId, activeProviderId, mediaType, season, episode]);
+    }).catch(() => { /* fire-and-forget */ });
+  };
 
-  const handleIframeError = useCallback(() => {
+  const handleIframeError = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     setIsLoading(false);
     setHasError(true);
@@ -105,26 +129,22 @@ export default function IframePlayer({
     if (idx < providers.length - 1) {
       setTimeout(() => onProviderChange(providers[idx + 1].id), 1500);
     }
-  }, [activeProviderId, providers, onProviderChange, onProviderError, reportHealth]);
+  };
 
-  const handleIframeLoad = useCallback(() => {
+  const handleIframeLoad = () => {
     setIsLoading(false);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    setTimeout(() => { if (!hasErrorRef.current) reportHealth(true); }, 5000);
-  }, [reportHealth]);
-
-  // Click shield: absorbs first click then permanently removes itself
-  const handleShieldClick = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setClickShieldActive(false);
-  }, []);
+    // Use ref to avoid stale closure
+    setTimeout(() => {
+      if (!hasErrorRef.current) reportHealth(true);
+    }, 5000);
+  };
 
   if (!activeUrl) {
     return (
       <div className="w-full h-full flex items-center justify-center bg-black">
         <div className="text-center">
-          <AlertTriangle size={48} className="text-red-400 mx-auto mb-4" />
+          <AlertTriangle size={48} className="text-red-400 mx-auto mb-4" aria-hidden="true" />
           <p className="text-white/70 text-lg font-medium">No servers available</p>
           <p className="text-white/50 text-sm mt-1">All providers are currently down</p>
         </div>
@@ -140,6 +160,7 @@ export default function IframePlayer({
         src={activeUrl}
         className="absolute inset-0 w-full h-full border-none z-10"
         allowFullScreen
+        /* sandbox removed — proxy handles ad/popup blocking at the network layer */
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
         referrerPolicy="no-referrer"
         onLoad={handleIframeLoad}
@@ -147,43 +168,24 @@ export default function IframePlayer({
         title={`Video player - ${activeProvider?.name || 'Stream'}`}
       />
 
-      {/* Click Shield — absorbs 1st click to prevent ad popup trigger */}
-      {clickShieldActive && (
-        <div
-          onClick={handleShieldClick}
-          className="absolute inset-0 z-20 cursor-pointer"
-          style={{ background: 'transparent' }}
-        >
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5 }}
-            className="absolute top-3 right-3 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-black/60 backdrop-blur-md border border-amber-500/20 pointer-events-none"
-          >
-            <ShieldAlert size={12} className="text-amber-400" />
-            <span className="text-amber-300 text-[10px] font-medium">
-              Click once to activate player
-            </span>
-          </motion.div>
-        </div>
+      {adBlockActive && (
+        <AdBlockerOverlay onDismiss={() => setAdBlockActive(false)} />
       )}
 
-      {/* Protected badge */}
-      {!clickShieldActive && !isLoading && !hasError && (
+      {!adBlockActive && !isLoading && !hasError && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.5 }}
           className="absolute top-3 right-3 z-30 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-black/40 backdrop-blur-md border border-emerald-500/10 pointer-events-none"
         >
-          <ShieldCheck size={11} className="text-emerald-400/60" />
+          <ShieldCheck size={11} className="text-emerald-400/60" aria-hidden="true" />
           <span className="text-emerald-300/40 text-[9px] font-medium">Protected</span>
         </motion.div>
       )}
 
-      {/* Loading overlay */}
       <AnimatePresence>
-        {isLoading && !clickShieldActive && (
+        {isLoading && !adBlockActive && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="absolute inset-0 z-20 flex items-center justify-center bg-black/90 backdrop-blur-sm">
             <div className="flex flex-col items-center gap-4">
@@ -194,13 +196,12 @@ export default function IframePlayer({
         )}
       </AnimatePresence>
 
-      {/* Error overlay with auto-failover */}
       <AnimatePresence>
         {hasError && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="absolute inset-0 z-20 flex items-center justify-center bg-black/90">
             <div className="text-center">
-              <AlertTriangle size={40} className="text-amber-400 mx-auto mb-3" />
+              <AlertTriangle size={40} className="text-amber-400 mx-auto mb-3" aria-hidden="true" />
               <p className="text-white/70 text-sm font-medium">Server failed to load</p>
               <p className="text-white/50 text-xs mt-1 mb-4">Trying next server...</p>
               <button
@@ -208,12 +209,13 @@ export default function IframePlayer({
                   setHasError(false);
                   hasErrorRef.current = false;
                   setIsLoading(true);
-                  setClickShieldActive(true);
+                  setAdBlockActive(true);
                   if (iframeRef.current) iframeRef.current.src = activeUrl;
                 }}
                 className="flex items-center gap-2 px-4 py-2 mx-auto rounded-full bg-white/10 hover:bg-white/15 text-white text-sm transition-all border border-white/10"
+                aria-label="Retry loading video"
               >
-                <RefreshCw size={14} /> Retry
+                <RefreshCw size={14} aria-hidden="true" /> Retry
               </button>
             </div>
           </motion.div>

@@ -24,7 +24,6 @@ interface StreamPlayerProps {
   season?: number;
   episode?: number;
   onNextEpisode?: () => void;
-  onExtractionStateChange?: (isNative: boolean) => void;
 }
 
 export default function StreamPlayer({
@@ -39,7 +38,6 @@ export default function StreamPlayer({
   season,
   episode,
   onNextEpisode,
-  onExtractionStateChange,
 }: StreamPlayerProps) {
   // Only run extraction for TMDB titles without a fileId
   const extraction = useStreamExtraction({
@@ -49,13 +47,6 @@ export default function StreamPlayer({
     episode,
     enabled: !!tmdbId && !fileId,
   });
-
-  React.useEffect(() => {
-    if (onExtractionStateChange) {
-      onExtractionStateChange(extraction.status === 'success');
-    }
-  }, [extraction.status, onExtractionStateChange]);
-
 
   // ─── Tier 1: GDrive direct stream ────────────────────────────
   if (fileId) {

@@ -1,4 +1,4 @@
-// ─── ATMOS V3.0 — Cloudflare Worker: Nuclear Ad-Block Proxy ────────────
+// ─── ATMOS V4.0 — Cloudflare Worker: Nuclear Ad-Block Proxy ────────────
 // Dual Purpose Proxy:
 // 1. CORS Proxy for @movie-web/providers (when ?destination= is passed)
 // 2. Ad-Free Reverse Proxy for Vidlink.pro (when no destination is passed)
@@ -7,6 +7,7 @@
 //   - Strip ad library fetching (mercury, venus, popads, aclib, cloudfront ad CDN)
 //   - Neuter sandbox detection (multiple detection vectors)
 //   - Block window.open, top-navigation, and target=_blank
+//   - Rewrite postMessage origin to allow watch progress events
 
 const HEADER_MAP = {
   'x-cookie': 'cookie',
@@ -17,6 +18,20 @@ const HEADER_MAP = {
 };
 
 const STRIP_HEADERS = ['content-encoding', 'content-length', 'transfer-encoding'];
+
+// Known ad/tracking domains to block completely
+const BLOCKED_DOMAINS = [
+  'mc.yandex.ru',
+  'yandex.ru/metrika',
+  'clarity.ms',
+  'googletagmanager.com',
+  'google-analytics.com',
+  'popads.net',
+  'adcash.com',
+  'dcbbwymp',
+  'cloudfront.net/fu',
+  'aclib.js',
+];
 
 export default {
   async fetch(request, env, ctx) {
@@ -107,6 +122,19 @@ async function handleVidlinkProxy(request, url) {
   const targetPath = url.pathname;
   
   // ═══════════════════════════════════════════════════════════════════
+  // LAYER 0: BLOCK AD/TRACKING REQUESTS AT THE EDGE
+  // Prevent any ad-related resources from being fetched at all.
+  // ═══════════════════════════════════════════════════════════════════
+  for (const domain of BLOCKED_DOMAINS) {
+    if (targetPath.includes(domain)) {
+      return new Response("/* ATMOS: blocked */", {
+        status: 200,
+        headers: { 'Content-Type': 'application/javascript', 'Access-Control-Allow-Origin': '*' }
+      });
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   // LAYER 1: BLOCK AD API ENDPOINTS COMPLETELY
   // These endpoints serve the ad libraries. Return empty/neutered JS.
   // ═══════════════════════════════════════════════════════════════════
@@ -118,7 +146,7 @@ async function handleVidlinkProxy(request, url) {
   }
 
   // Block the WASM ad engine — return minimal valid WASM (8 bytes = magic + version)
-  if (targetPath.endsWith('/fu.wasm')) {
+  if (targetPath.endsWith('/fu.wasm') || targetPath.endsWith('.wasm')) {
     const minimalWasm = new Uint8Array([0x00,0x61,0x73,0x6d, 0x01,0x00,0x00,0x00]);
     return new Response(minimalWasm, {
       status: 200,
@@ -140,8 +168,18 @@ async function handleVidlinkProxy(request, url) {
   }
 
   // Block known ad CDN domains and patterns
-  if (targetPath.includes('popads') || targetPath.includes('dcbbwymp') || targetPath.includes('cloudfront.net') || targetPath.includes('adcash')) {
+  if (targetPath.includes('popads') || targetPath.includes('dcbbwymp') || 
+      targetPath.includes('adcash') || targetPath.includes('aclib')) {
     return new Response("/* ATMOS: blocked */", {
+      status: 200,
+      headers: { 'Content-Type': 'application/javascript', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
+
+  // Block Yandex Metrika, Clarity, Google Analytics tracking pixels/scripts
+  if (targetPath.includes('/watch/') && targetPath.includes('yandex') ||
+      targetPath.includes('clarity') || targetPath.includes('gtag')) {
+    return new Response("/* ATMOS: tracking blocked */", {
       status: 200,
       headers: { 'Content-Type': 'application/javascript', 'Access-Control-Allow-Origin': '*' }
     });
@@ -207,18 +245,35 @@ async function handleVidlinkProxy(request, url) {
       
       // 4. Kill popads script ID references
       text = text.replace(/"popads-script"/g, '"atmos-blocked"');
+
+      // 5. Kill ad-related dynamic script injection patterns
+      text = text.replace(/createElement\(["']script["']\)[\s\S]*?\.src\s*=\s*["'][^"']*(?:adcash|popads|cloudfront)[^"']*["']/g, 
+        'createElement("script");/* ATMOS: ad script blocked */');
       
+      // 6. Kill specific VidLink ad manager patterns
+      text = text.replace(/\blimitAds\b\s*[=:]\s*false/g, 'limitAds:true');
+      text = text.replace(/\blimitAds\b\s*[=:]\s*!1/g, 'limitAds:!0');
+      
+      // ── TRACKING REMOVAL ──
+      
+      // Kill Yandex Metrika
+      text = text.replace(/mc\.yandex\.ru\/watch\/\d+/g, 'localhost/noop');
+      text = text.replace(/mc\.yandex\.ru\/metrika\/tag\.js/g, 'localhost/noop.js');
+      text = text.replace(/ym\(\d+,\s*["']init["']/g, 'console.log("ATMOS:ym-blocked"');
+      
+      // Kill Microsoft Clarity
+      text = text.replace(/clarity\.ms\/tag\/[a-z0-9]+/g, 'localhost/noop');
+      
+      // Kill Google Analytics
+      text = text.replace(/googletagmanager\.com\/gtag\/js\?id=[A-Z0-9-]+/g, 'localhost/noop.js');
+      text = text.replace(/gtag\(['"]config['"],\s*['"][A-Z0-9-]+['"]\)/g, 'console.log("ATMOS:gtag-blocked")');
+
       // ── SANDBOX DETECTION NEUTRALIZATION ──
-      
-      // Strategy: Replace the sandbox detector function body.
-      // The detector sets document.body.innerHTML to show "Please Disable Sandbox"
-      // We need to neuter ALL the detection vectors:
       
       // Vector 1: frameElement.hasAttribute("sandbox") check
       text = text.replace(/\.hasAttribute\(["']sandbox["']\)/g, '.hasAttribute("atmos-never-match")');
       
       // Vector 2: The error message display function
-      // Pattern: console.log("Sandboxed iframe detected"),document.body.innerHTML='...'
       text = text.replace(
         /console\.log\(["']Sandboxed iframe detected["']\)/g,
         'console.log("ATMOS: sandbox check bypassed")'
@@ -229,7 +284,6 @@ async function handleVidlinkProxy(request, url) {
       );
       
       // Vector 3: The document.domain assignment test
-      // When sandboxed, setting document.domain throws; they catch it and check for "sandbox" in the error
       text = text.replace(
         /\.toString\(\)\.toLowerCase\(\)\.includes\(["']sandbox["']\)/g,
         '.toString().toLowerCase().includes("atmos-never-match")'
@@ -248,10 +302,13 @@ async function handleVidlinkProxy(request, url) {
 [class*="banner"], [class*="adcash"], [id*="adcash"], [class*="ad-container"],
 [class*="ad-overlay"], [class*="popup"], [data-adcash], [id*="popads"],
 iframe[src*="adcash"], iframe[src*="cloudfront"], div[style*="z-index: 9999"],
-div[style*="z-index:9999"], div[style*="z-index: 2147"] { display:none!important; visibility:hidden!important; }
+div[style*="z-index:9999"], div[style*="z-index: 2147"],
+div[style*="z-index:2147483647"], div[style*="position: fixed"][style*="z-index"],
+/* Hide Yandex Metrika noscript tracking pixel */
+noscript img[src*="yandex"], img[src*="mc.yandex.ru"] { display:none!important; visibility:hidden!important; width:0!important; height:0!important; }
 </style>
 <script>
-// ═══ ATMOS Master Protection Layer ═══
+// ═══ ATMOS V4.0 Master Protection Layer ═══
 (function() {
   // Kill the ad data provider function
   window.getAdv = function() { return null; };
@@ -259,6 +316,11 @@ div[style*="z-index:9999"], div[style*="z-index: 2147"] { display:none!important
   
   // Block ALL popups
   window.open = function() { return null; };
+  
+  // Block tracking functions
+  window.ym = function() {};
+  window.gtag = function() {};
+  window.dataLayer = [];
   
   // Prevent scripts from detecting they're in a sandbox
   try {
@@ -308,20 +370,67 @@ div[style*="z-index:9999"], div[style*="z-index: 2147"] { display:none!important
         var el = node;
         var id = (el.id || '').toLowerCase();
         var cls = (el.className || '').toString().toLowerCase();
+        var src = (el.src || '').toLowerCase();
+        var href = (el.href || '').toLowerCase();
+        
+        // Remove ad containers
         if (id.includes('adcash') || id.includes('popads') || cls.includes('adcash') || cls.includes('banner')) {
           el.remove();
+          return;
         }
         // Remove injected iframes from ad scripts
-        if (el.tagName === 'IFRAME' && el.src && (el.src.includes('adcash') || el.src.includes('cloudfront'))) {
+        if (el.tagName === 'IFRAME' && el.src && (src.includes('adcash') || src.includes('cloudfront'))) {
           el.remove();
+          return;
+        }
+        // Remove injected tracking scripts
+        if (el.tagName === 'SCRIPT' && (src.includes('yandex') || src.includes('clarity.ms') || src.includes('googletagmanager') || src.includes('popads') || src.includes('adcash'))) {
+          el.remove();
+          return;
+        }
+        // Remove tracking link preloads
+        if (el.tagName === 'LINK' && (href.includes('yandex') || href.includes('clarity.ms') || href.includes('googletagmanager'))) {
+          el.remove();
+          return;
+        }
+        // Remove high z-index overlay ads
+        if (el.style && el.style.zIndex && parseInt(el.style.zIndex) > 9000 && el.tagName === 'DIV') {
+          var rect = el.getBoundingClientRect();
+          // Only remove if it looks like a fullscreen overlay (not player controls)
+          if (rect.width > window.innerWidth * 0.5 && rect.height > window.innerHeight * 0.3) {
+            el.remove();
+            return;
+          }
         }
       });
     });
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
+  
+  // Remove existing tracking elements on DOMContentLoaded
+  document.addEventListener('DOMContentLoaded', function() {
+    // Remove Yandex tracking pixels
+    document.querySelectorAll('img[src*="yandex"], noscript img[src*="yandex"]').forEach(function(el) { el.remove(); });
+    // Remove tracking link preloads
+    document.querySelectorAll('link[href*="yandex"], link[href*="clarity.ms"], link[href*="googletagmanager"]').forEach(function(el) { el.remove(); });
+    // Remove tracking scripts
+    document.querySelectorAll('script[src*="yandex"], script[src*="clarity.ms"], script[src*="googletagmanager"]').forEach(function(el) { el.remove(); });
+    // Remove inline tracking scripts
+    document.querySelectorAll('script#yandex-metrika, script#clarity-script, script#google-analytics').forEach(function(el) { el.remove(); });
+  });
 })();
 </script>`;
         text = text.replace('<head>', '<head>' + masterScript);
+        
+        // Remove tracking script tags and preloads from the HTML
+        text = text.replace(/<link[^>]*href="[^"]*(?:mc\.yandex\.ru|clarity\.ms|googletagmanager\.com)[^"]*"[^>]*>/gi, '');
+        text = text.replace(/<script[^>]*src="[^"]*(?:mc\.yandex\.ru|clarity\.ms|googletagmanager\.com)[^"]*"[^>]*>[\s\S]*?<\/script>/gi, '');
+        text = text.replace(/<script[^>]*id="(?:yandex-metrika|clarity-script|google-analytics)"[^>]*>[\s\S]*?<\/script>/gi, '');
+        text = text.replace(/<noscript>[\s\S]*?mc\.yandex\.ru[\s\S]*?<\/noscript>/gi, '');
+        
+        // Remove the JW Player library preload (loaded by VidLink internally when needed)
+        // We keep it if player=jw is requested, but strip the preload
+        text = text.replace(/<link[^>]*href="[^"]*cdn\.jwplayer\.com[^"]*"[^>]*>/gi, '');
       }
 
       // Remove content-length since we changed the body
