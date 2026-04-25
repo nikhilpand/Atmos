@@ -165,6 +165,341 @@ function StreamCard({ stream, title, type, season, episode, year, runtime }: {
   );
 }
 
+// ─── Language Detection Algorithm ───────────────────────────────────
+function detectLanguage(stream: ExtractedStream): string[] {
+  const langs: Set<string> = new Set();
+  const url = stream.url.toLowerCase();
+  const provider = stream.provider.toLowerCase();
+
+  // From captions (most reliable)
+  if (stream.captions && stream.captions.length > 0) {
+    for (const cap of stream.captions) {
+      const lang = cap.language?.toLowerCase() || '';
+      if (lang.includes('hin') || lang === 'hi') langs.add('Hindi');
+      else if (lang.includes('eng') || lang === 'en') langs.add('English');
+      else if (lang.includes('tam') || lang === 'ta') langs.add('Tamil');
+      else if (lang.includes('tel') || lang === 'te') langs.add('Telugu');
+      else if (lang.includes('spa') || lang === 'es') langs.add('Spanish');
+      else if (lang.includes('fre') || lang === 'fr') langs.add('French');
+      else if (lang.includes('ger') || lang === 'de') langs.add('German');
+      else if (lang.includes('jpn') || lang === 'ja') langs.add('Japanese');
+      else if (lang.includes('kor') || lang === 'ko') langs.add('Korean');
+      else if (lang.includes('ara') || lang === 'ar') langs.add('Arabic');
+      else if (lang.includes('por') || lang === 'pt') langs.add('Portuguese');
+      else if (lang.includes('ita') || lang === 'it') langs.add('Italian');
+      else if (lang.includes('chi') || lang === 'zh') langs.add('Chinese');
+      else if (lang.includes('rus') || lang === 'ru') langs.add('Russian');
+    }
+  }
+
+  // From magnet/torrent URL or title patterns
+  if (stream.type === 'magnet' || stream.type === 'torrent') {
+    const decoded = decodeURIComponent(url);
+    if (/hindi|hin\b/i.test(decoded)) langs.add('Hindi');
+    if (/english|eng\b/i.test(decoded)) langs.add('English');
+    if (/dual\.audio|multi/i.test(decoded)) { langs.add('English'); langs.add('Hindi'); }
+    if (/tamil|tam\b/i.test(decoded)) langs.add('Tamil');
+    if (/telugu|tel\b/i.test(decoded)) langs.add('Telugu');
+    if (/korean|kor\b/i.test(decoded)) langs.add('Korean');
+    if (/japanese|jpn\b/i.test(decoded)) langs.add('Japanese');
+  }
+
+  // Default: assume English for known English-first providers
+  if (langs.size === 0) {
+    if (['yts', 'eztv', 'movieweb', 'vidsrc'].some(p => provider.includes(p))) {
+      langs.add('English');
+    } else {
+      langs.add('Multi');
+    }
+  }
+
+  return [...langs];
+}
+
+// ─── Quality Normalization ──────────────────────────────────────────
+function normalizeQuality(q: string): string {
+  const lower = q.toLowerCase();
+  if (lower.includes('2160') || lower.includes('4k') || lower.includes('uhd')) return '4K';
+  if (lower.includes('1080')) return '1080p';
+  if (lower.includes('720')) return '720p';
+  if (lower.includes('480')) return '480p';
+  if (lower.includes('360')) return '360p';
+  return 'Auto';
+}
+
+// ─── Filter Pill Component ──────────────────────────────────────────
+function FilterPill({ label, count, active, onClick, color = 'violet' }: {
+  label: string; count: number; active: boolean; onClick: () => void; color?: string;
+}) {
+  const colors: Record<string, { active: string; inactive: string }> = {
+    violet: { active: 'bg-violet-600 text-white border-violet-500/50', inactive: 'bg-white/[0.04] text-white/50 border-white/[0.08] hover:bg-white/[0.08] hover:text-white/70' },
+    green:  { active: 'bg-green-600 text-white border-green-500/50',   inactive: 'bg-white/[0.04] text-white/50 border-white/[0.08] hover:bg-white/[0.08] hover:text-white/70' },
+    cyan:   { active: 'bg-cyan-600 text-white border-cyan-500/50',     inactive: 'bg-white/[0.04] text-white/50 border-white/[0.08] hover:bg-white/[0.08] hover:text-white/70' },
+    amber:  { active: 'bg-amber-600 text-white border-amber-500/50',   inactive: 'bg-white/[0.04] text-white/50 border-white/[0.08] hover:bg-white/[0.08] hover:text-white/70' },
+  };
+  const c = colors[color] || colors.violet;
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all border ${active ? c.active : c.inactive}`}
+    >
+      {label}
+      {count > 0 && (
+        <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${active ? 'bg-white/20' : 'bg-white/10 text-white/40'}`}>
+          {count}
+        </span>
+      )}
+    </button>
+  );
+}
+
+// ─── Movie Download Section (with filters) ──────────────────────────
+function MovieDownloadSection({ streams, loading, title, year, runtime, tmdbId, onRescan, onStreamInstead }: {
+  streams: ExtractedStream[];
+  loading: boolean;
+  title: string;
+  year: string;
+  runtime?: number;
+  tmdbId: string;
+  onRescan: () => void;
+  onStreamInstead: () => void;
+}) {
+  const [qualityFilter, setQualityFilter] = useState<string>('all');
+  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [langFilter, setLangFilter] = useState<string>('all');
+
+  // Analyze streams for filter counts
+  const analysis = React.useMemo(() => {
+    const qualityCounts: Record<string, number> = {};
+    const typeCounts: Record<string, number> = { magnet: 0, direct: 0 };
+    const langCounts: Record<string, number> = {};
+    const streamLangs = new Map<ExtractedStream, string[]>();
+
+    for (const s of streams) {
+      // Quality
+      const q = normalizeQuality(s.quality);
+      qualityCounts[q] = (qualityCounts[q] || 0) + 1;
+
+      // Type
+      if (s.type === 'magnet' || s.type === 'torrent') typeCounts.magnet++;
+      else typeCounts.direct++;
+
+      // Language
+      const langs = detectLanguage(s);
+      streamLangs.set(s, langs);
+      for (const l of langs) {
+        langCounts[l] = (langCounts[l] || 0) + 1;
+      }
+    }
+
+    return { qualityCounts, typeCounts, langCounts, streamLangs };
+  }, [streams]);
+
+  // Apply filters
+  const filteredStreams = React.useMemo(() => {
+    return streams.filter(s => {
+      // Quality filter
+      if (qualityFilter !== 'all') {
+        const q = normalizeQuality(s.quality);
+        if (q !== qualityFilter) return false;
+      }
+      // Type filter
+      if (typeFilter !== 'all') {
+        const isMagnet = s.type === 'magnet' || s.type === 'torrent';
+        if (typeFilter === 'magnet' && !isMagnet) return false;
+        if (typeFilter === 'direct' && isMagnet) return false;
+      }
+      // Language filter
+      if (langFilter !== 'all') {
+        const langs = analysis.streamLangs.get(s) || [];
+        if (!langs.includes(langFilter)) return false;
+      }
+      return true;
+    });
+  }, [streams, qualityFilter, typeFilter, langFilter, analysis.streamLangs]);
+
+  // Quality order for pills
+  const qualityOrder = ['4K', '1080p', '720p', '480p', '360p', 'Auto'];
+  const availableQualities = qualityOrder.filter(q => (analysis.qualityCounts[q] || 0) > 0);
+
+  // Language order (English and Hindi first, then alphabetical)
+  const langPriority = ['English', 'Hindi', 'Tamil', 'Telugu', 'Korean', 'Japanese', 'Multi'];
+  const availableLangs = [...new Set([
+    ...langPriority.filter(l => (analysis.langCounts[l] || 0) > 0),
+    ...Object.keys(analysis.langCounts).filter(l => !langPriority.includes(l)).sort(),
+  ])];
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+        <h3 className="text-white/80 text-sm font-semibold flex items-center gap-2">
+          <Film size={14} className="text-violet-400" /> Available Downloads
+          {streams.length > 0 && (
+            <span className="px-2 py-0.5 rounded-lg bg-violet-500/15 text-violet-300 text-[11px] font-bold border border-violet-500/20">
+              {streams.length} found
+            </span>
+          )}
+        </h3>
+        <div className="flex items-center gap-2">
+          {loading && (
+            <span className="text-violet-400 text-xs flex items-center gap-1.5">
+              <Loader2 size={12} className="animate-spin" /> Scanning 10 sources...
+            </span>
+          )}
+          {!loading && (
+            <button
+              onClick={onRescan}
+              className="flex items-center gap-1 px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/50 hover:text-white text-xs transition-all border border-white/5"
+            >
+              <RefreshCw size={11} /> Rescan
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Filter Bar */}
+      {streams.length > 0 && (
+        <div className="space-y-3 p-4 rounded-2xl bg-white/[0.02] border border-white/[0.05]">
+          {/* Quality Filters */}
+          {availableQualities.length > 1 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-white/30 text-[10px] font-bold uppercase tracking-wider w-14 flex-shrink-0">Quality</span>
+              <FilterPill label="All" count={streams.length} active={qualityFilter === 'all'} onClick={() => setQualityFilter('all')} />
+              {availableQualities.map(q => (
+                <FilterPill
+                  key={q}
+                  label={q}
+                  count={analysis.qualityCounts[q] || 0}
+                  active={qualityFilter === q}
+                  onClick={() => setQualityFilter(qualityFilter === q ? 'all' : q)}
+                  color={q === '4K' ? 'amber' : q === '1080p' ? 'green' : 'violet'}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Type Filters */}
+          {analysis.typeCounts.magnet > 0 && analysis.typeCounts.direct > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-white/30 text-[10px] font-bold uppercase tracking-wider w-14 flex-shrink-0">Type</span>
+              <FilterPill label="All" count={streams.length} active={typeFilter === 'all'} onClick={() => setTypeFilter('all')} />
+              <FilterPill
+                label="⬇ Direct"
+                count={analysis.typeCounts.direct}
+                active={typeFilter === 'direct'}
+                onClick={() => setTypeFilter(typeFilter === 'direct' ? 'all' : 'direct')}
+                color="violet"
+              />
+              <FilterPill
+                label="🧲 Magnet"
+                count={analysis.typeCounts.magnet}
+                active={typeFilter === 'magnet'}
+                onClick={() => setTypeFilter(typeFilter === 'magnet' ? 'all' : 'magnet')}
+                color="green"
+              />
+            </div>
+          )}
+
+          {/* Language Filters */}
+          {availableLangs.length > 1 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-white/30 text-[10px] font-bold uppercase tracking-wider w-14 flex-shrink-0">Lang</span>
+              <FilterPill label="All" count={streams.length} active={langFilter === 'all'} onClick={() => setLangFilter('all')} />
+              {availableLangs.map(l => (
+                <FilterPill
+                  key={l}
+                  label={l}
+                  count={analysis.langCounts[l] || 0}
+                  active={langFilter === l}
+                  onClick={() => setLangFilter(langFilter === l ? 'all' : l)}
+                  color="cyan"
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Filtered Results */}
+      {streams.length > 0 ? (
+        <div className="space-y-2">
+          {/* Active filter summary */}
+          {(qualityFilter !== 'all' || typeFilter !== 'all' || langFilter !== 'all') && (
+            <div className="flex items-center justify-between px-1">
+              <p className="text-white/30 text-xs">
+                Showing {filteredStreams.length} of {streams.length} results
+                {qualityFilter !== 'all' && <span className="text-violet-400/70"> · {qualityFilter}</span>}
+                {typeFilter !== 'all' && <span className="text-green-400/70"> · {typeFilter === 'magnet' ? 'Magnet' : 'Direct'}</span>}
+                {langFilter !== 'all' && <span className="text-cyan-400/70"> · {langFilter}</span>}
+              </p>
+              <button
+                onClick={() => { setQualityFilter('all'); setTypeFilter('all'); setLangFilter('all'); }}
+                className="text-white/30 hover:text-white/60 text-[10px] underline transition-colors"
+              >
+                Clear Filters
+              </button>
+            </div>
+          )}
+
+          {filteredStreams.length > 0 ? (
+            filteredStreams.map((s, i) => (
+              <StreamCard
+                key={i}
+                stream={s}
+                title={title}
+                type="movie"
+                year={year}
+                runtime={runtime}
+              />
+            ))
+          ) : (
+            <div className="flex flex-col items-center gap-2 py-8">
+              <AlertCircle size={20} className="text-white/15" />
+              <p className="text-white/30 text-sm">No results match your filters</p>
+              <button
+                onClick={() => { setQualityFilter('all'); setTypeFilter('all'); setLangFilter('all'); }}
+                className="text-violet-400 text-xs hover:text-violet-300 transition-colors"
+              >
+                Clear all filters
+              </button>
+            </div>
+          )}
+        </div>
+      ) : loading ? (
+        <div className="flex flex-col items-center gap-4 py-16">
+          <div className="relative w-16 h-16">
+            <div className="absolute inset-0 rounded-full border-2 border-white/5" />
+            <div className="absolute inset-0 rounded-full border-2 border-t-violet-500 animate-spin" />
+          </div>
+          <p className="text-white/40 text-sm">Scanning 10 sources in parallel...</p>
+          <p className="text-white/20 text-[11px]">VidSrc.to · Embed.su · VidSrc.icu · AutoEmbed · Videasy · VidSrc.cc · NonTongo · MovieWeb · YTS · EZTV</p>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center gap-3 py-12">
+          <AlertCircle size={32} className="text-white/15" />
+          <p className="text-white/30 text-sm">No direct download links found</p>
+          <p className="text-white/15 text-xs mb-3">All 10 sources were scanned. This title may not be available yet.</p>
+          <div className="flex gap-2">
+            <button
+              onClick={onRescan}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600/80 hover:bg-violet-600 text-white text-sm font-medium transition-all"
+            >
+              <RefreshCw size={13} /> Try Again
+            </button>
+            <button
+              onClick={onStreamInstead}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white/70 text-sm font-medium transition-all border border-white/10"
+            >
+              <Play size={13} /> Stream Instead
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EpisodeRow({ ep, tmdbId, titleName, year, onExtract, episodeStreams }: {
   ep: Episode;
   tmdbId: string;
@@ -471,70 +806,16 @@ function DownloadPageInner() {
 
         {/* ═══ Movie Download ═══ */}
         {mediaType === 'movie' && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-              <h3 className="text-white/80 text-sm font-semibold flex items-center gap-2">
-                <Film size={14} className="text-violet-400" /> Available Downloads
-              </h3>
-              <div className="flex items-center gap-2">
-                {movieLoading && (
-                  <span className="text-violet-400 text-xs flex items-center gap-1.5">
-                    <Loader2 size={12} className="animate-spin" /> Scanning 10 sources...
-                  </span>
-                )}
-                {!movieLoading && (
-                  <button
-                    onClick={() => { setMovieStreams([]); setMovieLoading(false); setTimeout(extractMovie, 100); }}
-                    className="flex items-center gap-1 px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/50 hover:text-white text-xs transition-all border border-white/5"
-                  >
-                    <RefreshCw size={11} /> Rescan
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {movieStreams.length > 0 ? (
-              movieStreams.map((s, i) => (
-                <StreamCard
-                  key={i}
-                  stream={s}
-                  title={displayTitle}
-                  type="movie"
-                  year={year}
-                  runtime={titleInfo?.runtime}
-                />
-              ))
-            ) : movieLoading ? (
-              <div className="flex flex-col items-center gap-4 py-16">
-                <div className="relative w-16 h-16">
-                  <div className="absolute inset-0 rounded-full border-2 border-white/5" />
-                  <div className="absolute inset-0 rounded-full border-2 border-t-violet-500 animate-spin" />
-                </div>
-                <p className="text-white/40 text-sm">Scanning 10 sources in parallel...</p>
-                <p className="text-white/20 text-[11px]">VidSrc.to · Embed.su · VidSrc.icu · AutoEmbed · Videasy · VidSrc.cc · NonTongo · MovieWeb · YTS · EZTV</p>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-3 py-12">
-                <AlertCircle size={32} className="text-white/15" />
-                <p className="text-white/30 text-sm">No direct download links found</p>
-                <p className="text-white/15 text-xs mb-3">All 10 sources were scanned. This title may not be available yet.</p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => { setMovieStreams([]); setMovieLoading(false); setTimeout(extractMovie, 100); }}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600/80 hover:bg-violet-600 text-white text-sm font-medium transition-all"
-                  >
-                    <RefreshCw size={13} /> Try Again
-                  </button>
-                  <button
-                    onClick={() => router.push(`/watch/${tmdbId}?type=movie`)}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white/70 text-sm font-medium transition-all border border-white/10"
-                  >
-                    <Play size={13} /> Stream Instead
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          <MovieDownloadSection
+            streams={movieStreams}
+            loading={movieLoading}
+            title={displayTitle}
+            year={year}
+            runtime={titleInfo?.runtime}
+            tmdbId={tmdbId}
+            onRescan={() => { setMovieStreams([]); setMovieLoading(false); setTimeout(extractMovie, 100); }}
+            onStreamInstead={() => router.push(`/watch/${tmdbId}?type=movie`)}
+          />
         )}
 
         {/* ═══ TV Show Download ═══ */}
