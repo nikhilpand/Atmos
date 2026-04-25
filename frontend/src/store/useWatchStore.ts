@@ -13,6 +13,8 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { supabase } from '@/lib/supabase';
+import { useAuthStore } from './useAuthStore';
 
 // ─── Types ──────────────────────────────────────────────────────────
 export interface WatchEntry {
@@ -68,6 +70,9 @@ interface WatchState {
   // ── Telemetry ──
   recordProviderPerformance: (perf: Omit<ProviderPerformance, 'timestamp'>) => void;
   flushTelemetry: () => ProviderPerformance[];
+
+  // ── Supabase Sync ──
+  initSync: (userId: string) => Promise<void>;
 }
 
 function makeKey(tmdbId: string, season?: number, episode?: number): string {
@@ -97,6 +102,31 @@ export const useWatchStore = create<WatchState>()(
             },
           },
         }));
+
+        // Supabase Background Sync
+        const user = useAuthStore.getState().user;
+        if (user && supabase) {
+          supabase.from('watch_history').upsert({
+            user_id: user.id,
+            key: key,
+            tmdb_id: entry.tmdbId,
+            media_type: entry.mediaType,
+            title: entry.title,
+            poster_path: entry.posterPath,
+            backdrop_path: entry.backdropPath,
+            season: entry.season,
+            episode: entry.episode,
+            progress: entry.progress,
+            current_time: entry.currentTime,
+            duration: entry.duration,
+            genre_ids: entry.genreIds,
+            category: entry.category,
+            completed: completed,
+            updated_at: new Date(Date.now()).toISOString(),
+          }).then(({ error }) => {
+            if (error) console.error("Sync failed:", error);
+          });
+        }
       },
 
       getEntry: (tmdbId, season, episode) => {
@@ -161,6 +191,15 @@ export const useWatchStore = create<WatchState>()(
           delete entries[key];
           return { entries };
         });
+
+        const user = useAuthStore.getState().user;
+        if (user && supabase) {
+          supabase.from('watch_history').delete()
+            .match({ user_id: user.id, key })
+            .then(({ error }) => {
+              if (error) console.error("Sync delete failed:", error);
+            });
+        }
       },
 
       clearAll: () => set({ entries: {}, telemetryBuffer: [] }),
@@ -179,6 +218,50 @@ export const useWatchStore = create<WatchState>()(
         const buffer = get().telemetryBuffer;
         set({ telemetryBuffer: [] });
         return buffer;
+      },
+
+      initSync: async (userId: string) => {
+        if (!supabase) return;
+        try {
+          const { data, error } = await supabase
+            .from('watch_history')
+            .select('*')
+            .eq('user_id', userId);
+            
+          if (error) throw error;
+          if (!data || data.length === 0) return;
+
+          const localEntries = get().entries;
+          const merged = { ...localEntries };
+
+          for (const row of data) {
+            const local = merged[row.key];
+            const remoteTime = new Date(row.updated_at).getTime();
+            
+            if (!local || remoteTime > local.updatedAt) {
+              merged[row.key] = {
+                tmdbId: row.tmdb_id,
+                mediaType: row.media_type as 'movie' | 'tv',
+                title: row.title,
+                posterPath: row.poster_path,
+                backdropPath: row.backdrop_path,
+                season: row.season,
+                episode: row.episode,
+                progress: row.progress,
+                currentTime: row.current_time,
+                duration: row.duration,
+                genreIds: row.genre_ids || [],
+                category: row.category,
+                completed: row.completed,
+                updatedAt: remoteTime,
+              };
+            }
+          }
+
+          set({ entries: merged });
+        } catch (err) {
+          console.error("Failed to sync watch history from Supabase:", err);
+        }
       },
     }),
     {

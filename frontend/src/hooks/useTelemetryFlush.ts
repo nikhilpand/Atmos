@@ -8,7 +8,9 @@
 
 import { useEffect } from 'react';
 import { useWatchStore } from '@/store/useWatchStore';
+import { useAuthStore } from '@/store/useAuthStore';
 import { SUBS_URL } from '@/lib/constants';
+import { supabase } from '@/lib/supabase';
 
 export function useTelemetryFlush() {
   const flushTelemetry = useWatchStore(s => s.flushTelemetry);
@@ -25,7 +27,24 @@ export function useTelemetryFlush() {
           body: JSON.stringify({ events }),
         });
       } catch {
-        // Silent fail — telemetry is best-effort
+        // Silent fail
+      }
+
+      // ── Supabase Telemetry Sync ──
+      const user = useAuthStore.getState().user;
+      if (supabase) {
+        const supabaseEvents = events.map(e => ({
+          user_id: user?.id || null,
+          provider_id: e.providerId,
+          tmdb_id: e.tmdbId,
+          category: e.category,
+          success: e.success,
+          latency_ms: e.latencyMs,
+          created_at: new Date(e.timestamp).toISOString()
+        }));
+        supabase.from('telemetry').insert(supabaseEvents).then(({ error }) => {
+          if (error) console.error("Telemetry sync failed:", error);
+        });
       }
     };
 

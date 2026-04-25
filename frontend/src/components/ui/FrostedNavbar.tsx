@@ -4,8 +4,9 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import SearchBar from './SearchBar';
-import { Settings, Menu, X, Home, Film, Tv, Sparkles, HardDrive, Download } from 'lucide-react';
+import { Settings, Menu, X, Home, Film, Tv, Sparkles, HardDrive, Download, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuthStore } from '@/store/useAuthStore';
 
 const NAV_LINKS = [
   { href: '/', label: 'Home', icon: Home },
@@ -19,6 +20,7 @@ const NAV_LINKS = [
 export default function FrostedNavbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { user, profile, openAuthModal, signOut } = useAuthStore();
 
   useEffect(() => {
     const handler = () => setScrolled(window.scrollY > 30);
@@ -67,6 +69,29 @@ export default function FrostedNavbar() {
           {/* Right: Search + Admin + Menu */}
           <div className="flex items-center gap-2">
             <SearchBar onResultClick={handleSearchResult} />
+
+            {user ? (
+              <div className="relative group/auth flex items-center">
+                <button className="flex items-center justify-center w-8 h-8 rounded-full bg-violet-600/30 border border-violet-500/50 text-white font-bold text-xs uppercase transition-colors hover:bg-violet-600/50">
+                  {profile?.username ? profile.username.charAt(0) : <User size={14} />}
+                </button>
+                <div className="absolute top-full right-0 mt-2 w-32 py-1 bg-[#111] border border-white/10 rounded-lg shadow-xl opacity-0 invisible group-hover/auth:opacity-100 group-hover/auth:visible transition-all">
+                  <button
+                    onClick={signOut}
+                    className="w-full text-left px-4 py-2 text-xs text-white/70 hover:text-white hover:bg-white/5 transition-colors"
+                  >
+                    Sign Out
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={openAuthModal}
+                className="hidden sm:flex items-center justify-center px-4 h-8 rounded-full bg-white text-black font-semibold text-xs hover:bg-white/90 transition-colors"
+              >
+                Sign In
+              </button>
+            )}
 
             <Link
               href="/admin"
@@ -126,6 +151,23 @@ export default function FrostedNavbar() {
                   <Settings size={18} />
                   <span className="text-sm font-medium">Admin</span>
                 </Link>
+
+                {!user && (
+                  <button
+                    onClick={() => { setMobileOpen(false); openAuthModal(); }}
+                    className="w-full flex items-center justify-center mt-4 px-4 py-3 rounded-xl bg-white text-black font-bold text-sm"
+                  >
+                    Sign In
+                  </button>
+                )}
+                {user && (
+                  <button
+                    onClick={() => { setMobileOpen(false); signOut(); }}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-400 hover:text-red-300 hover:bg-white/5 transition-all"
+                  >
+                    <span className="text-sm font-medium">Sign Out</span>
+                  </button>
+                )}
               </div>
             </motion.div>
           </>
