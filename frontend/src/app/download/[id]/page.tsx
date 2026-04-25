@@ -7,7 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeft, Download, Film, Tv, ChevronDown, ChevronRight, Loader2,
   HardDrive, Globe, CheckCircle2, AlertCircle, Play, FileVideo, RefreshCw,
-  Server
+  Server, Magnet, ArrowUpCircle, ArrowDownCircle, ExternalLink
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchTitle, type Episode, type Season } from '@/lib/api';
@@ -17,8 +17,11 @@ import { TMDB_IMAGE_BASE } from '@/lib/constants';
 interface ExtractedStream {
   url: string;
   quality: string;
-  type: 'hls' | 'mp4' | 'unknown';
+  type: 'hls' | 'mp4' | 'magnet' | 'torrent' | 'unknown';
   provider: string;
+  size?: string;
+  seeds?: number;
+  peers?: number;
   captions: { language: string; url: string }[];
 }
 
@@ -51,6 +54,11 @@ function estimateSize(quality: string, durationMin?: number): string {
 
 // ─── Download handler ───────────────────────────────────────────────
 function triggerDownload(url: string, filename: string) {
+  if (url.startsWith('magnet:')) {
+    // Magnet links open the user's torrent client
+    window.open(url, '_self');
+    return;
+  }
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
@@ -72,35 +80,64 @@ function StreamCard({ stream, title, type, season, episode, year, runtime }: {
   runtime?: number;
 }) {
   const filename = buildFileName(title, type, season, episode, stream.quality, year);
-  const size = estimateSize(stream.quality, runtime);
-  const qualityColor = stream.quality.includes('1080') ? 'text-emerald-400 bg-emerald-500/15 border-emerald-500/20'
+  const isMagnet = stream.type === 'magnet' || stream.type === 'torrent';
+  const size = stream.size || estimateSize(stream.quality, runtime);
+  
+  const qualityColor = stream.quality.includes('2160') || stream.quality.includes('4k') ? 'text-fuchsia-400 bg-fuchsia-500/15 border-fuchsia-500/20'
+    : stream.quality.includes('1080') ? 'text-emerald-400 bg-emerald-500/15 border-emerald-500/20'
     : stream.quality.includes('720') ? 'text-blue-400 bg-blue-500/15 border-blue-500/20'
     : stream.quality.includes('480') ? 'text-amber-400 bg-amber-500/15 border-amber-500/20'
     : 'text-violet-400 bg-violet-500/15 border-violet-500/20';
+
+  const providerColor = isMagnet 
+    ? 'text-green-400/80'
+    : 'text-cyan-400/60';
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="group flex items-center justify-between gap-4 p-4 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] hover:border-white/10 transition-all"
+      className={`group flex items-center justify-between gap-4 p-4 rounded-2xl border transition-all ${
+        isMagnet
+          ? 'bg-green-500/[0.03] border-green-500/[0.08] hover:bg-green-500/[0.06] hover:border-green-500/15'
+          : 'bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06] hover:border-white/10'
+      }`}
     >
       <div className="flex items-center gap-3 min-w-0 flex-1">
-        <FileVideo size={18} className="text-white/30 flex-shrink-0" />
+        {isMagnet ? (
+          <ExternalLink size={18} className="text-green-400/40 flex-shrink-0" />
+        ) : (
+          <FileVideo size={18} className="text-white/30 flex-shrink-0" />
+        )}
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className={`px-2 py-0.5 rounded-lg text-xs font-bold border ${qualityColor}`}>
               {stream.quality.toUpperCase()}
             </span>
-            <span className="text-white/30 text-xs">{stream.type.toUpperCase()}</span>
+            <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${isMagnet ? 'text-green-400/70 bg-green-500/10' : 'text-white/30'}`}>
+              {isMagnet ? 'MAGNET' : stream.type.toUpperCase()}
+            </span>
             <span className="text-white/20 text-xs">·</span>
             <span className="text-white/40 text-xs flex items-center gap-1">
               <HardDrive size={10} /> {size}
             </span>
             <span className="text-white/20 text-xs">·</span>
-            <span className="text-cyan-400/60 text-xs flex items-center gap-1">
+            <span className={`text-xs flex items-center gap-1 ${providerColor}`}>
               <Server size={10} /> {stream.provider}
             </span>
-            {stream.captions.length > 0 && (
+            {/* Seeds/Peers for torrents */}
+            {isMagnet && stream.seeds !== undefined && (
+              <>
+                <span className="text-white/20 text-xs">·</span>
+                <span className="text-green-400/70 text-xs flex items-center gap-0.5">
+                  <ArrowUpCircle size={9} /> {stream.seeds}
+                </span>
+                <span className="text-red-400/50 text-xs flex items-center gap-0.5">
+                  <ArrowDownCircle size={9} /> {stream.peers ?? 0}
+                </span>
+              </>
+            )}
+            {stream.captions && stream.captions.length > 0 && (
               <>
                 <span className="text-white/20 text-xs">·</span>
                 <span className="text-white/40 text-xs flex items-center gap-1">
@@ -115,10 +152,14 @@ function StreamCard({ stream, title, type, season, episode, year, runtime }: {
 
       <button
         onClick={() => triggerDownload(stream.url, filename)}
-        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-all flex-shrink-0 shadow-lg shadow-violet-600/20 hover:shadow-violet-500/30"
+        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all flex-shrink-0 shadow-lg ${
+          isMagnet
+            ? 'bg-green-600 hover:bg-green-500 text-white shadow-green-600/20 hover:shadow-green-500/30'
+            : 'bg-violet-600 hover:bg-violet-500 text-white shadow-violet-600/20 hover:shadow-violet-500/30'
+        }`}
       >
-        <Download size={14} />
-        <span className="hidden sm:inline">Download</span>
+        {isMagnet ? <ExternalLink size={14} /> : <Download size={14} />}
+        <span className="hidden sm:inline">{isMagnet ? 'Open Magnet' : 'Download'}</span>
       </button>
     </motion.div>
   );
@@ -230,7 +271,7 @@ function EpisodeRow({ ep, tmdbId, titleName, year, onExtract, episodeStreams }: 
               <AlertCircle size={24} className="text-white/15" />
               <div className="text-center">
                 <p className="text-white/30 text-sm">No direct download links found</p>
-                <p className="text-white/15 text-[11px]">8 sources scanned. Try streaming instead.</p>
+                <p className="text-white/15 text-[11px]">10 sources scanned. Try streaming instead.</p>
               </div>
               <div className="flex gap-2 mt-1">
                 <button
@@ -438,7 +479,7 @@ function DownloadPageInner() {
               <div className="flex items-center gap-2">
                 {movieLoading && (
                   <span className="text-violet-400 text-xs flex items-center gap-1.5">
-                    <Loader2 size={12} className="animate-spin" /> Scanning 8 sources...
+                    <Loader2 size={12} className="animate-spin" /> Scanning 10 sources...
                   </span>
                 )}
                 {!movieLoading && (
@@ -469,14 +510,14 @@ function DownloadPageInner() {
                   <div className="absolute inset-0 rounded-full border-2 border-white/5" />
                   <div className="absolute inset-0 rounded-full border-2 border-t-violet-500 animate-spin" />
                 </div>
-                <p className="text-white/40 text-sm">Scanning 8 sources in parallel...</p>
-                <p className="text-white/20 text-[11px]">VidSrc.to · Embed.su · VidSrc.icu · AutoEmbed · Videasy · VidSrc.cc · NonTongo · MovieWeb</p>
+                <p className="text-white/40 text-sm">Scanning 10 sources in parallel...</p>
+                <p className="text-white/20 text-[11px]">VidSrc.to · Embed.su · VidSrc.icu · AutoEmbed · Videasy · VidSrc.cc · NonTongo · MovieWeb · YTS · EZTV</p>
               </div>
             ) : (
               <div className="flex flex-col items-center gap-3 py-12">
                 <AlertCircle size={32} className="text-white/15" />
                 <p className="text-white/30 text-sm">No direct download links found</p>
-                <p className="text-white/15 text-xs mb-3">All 8 sources were scanned. This title may not be available yet.</p>
+                <p className="text-white/15 text-xs mb-3">All 10 sources were scanned. This title may not be available yet.</p>
                 <div className="flex gap-2">
                   <button
                     onClick={() => { setMovieStreams([]); setMovieLoading(false); setTimeout(extractMovie, 100); }}

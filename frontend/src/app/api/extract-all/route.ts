@@ -13,9 +13,11 @@ const PROXY_URL = process.env.NEXT_PUBLIC_CF_PROXY_URL || '';
 interface ExtractedStream {
   url: string;
   quality: string;
-  type: 'hls' | 'mp4' | 'unknown';
+  type: 'hls' | 'mp4' | 'magnet' | 'torrent' | 'unknown';
   provider: string;
   size?: string;
+  seeds?: number;
+  peers?: number;
   captions: { language: string; url: string }[];
 }
 
@@ -39,6 +41,55 @@ async function proxyFetch(url: string, timeout = 10000): Promise<Response> {
     return res;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+// ─── Public Trackers for magnet links ────────────────────────────────
+const TRACKERS = [
+  'udp://open.demonii.com:1337/announce',
+  'udp://tracker.openbittorrent.com:80',
+  'udp://tracker.opentrackr.org:1337/announce',
+  'udp://p4p.arenabg.com:1337',
+  'udp://tracker.internetwarriors.net:1337/announce',
+  'udp://9.rarbg.to:2710/announce',
+  'udp://exodus.desync.com:6969/announce',
+  'udp://tracker.moeking.me:6969/announce',
+];
+
+function buildMagnetLink(hash: string, title: string): string {
+  const dn = encodeURIComponent(title);
+  const trackerParams = TRACKERS.map(t => `&tr=${encodeURIComponent(t)}`).join('');
+  return `magnet:?xt=urn:btih:${hash}&dn=${dn}${trackerParams}`;
+}
+
+// ─── TMDB → IMDB ID lookup (needed for torrent APIs) ────────────────
+const imdbCache = new Map<string, string>();
+
+async function getIMDBId(tmdbId: string, type: string): Promise<string | null> {
+  const cacheKey = `${type}:${tmdbId}`;
+  if (imdbCache.has(cacheKey)) return imdbCache.get(cacheKey)!;
+
+  const apiKey = process.env.TMDB_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const res = await fetch(
+      `https://api.themoviedb.org/3/${type}/${tmdbId}/external_ids?api_key=${apiKey}`,
+      { signal: AbortSignal.timeout(4000) }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const imdbId = data.imdb_id as string;
+    if (imdbId) {
+      imdbCache.set(cacheKey, imdbId);
+      if (imdbCache.size > 500) {
+        const keys = [...imdbCache.keys()];
+        keys.slice(0, 100).forEach(k => imdbCache.delete(k));
+      }
+    }
+    return imdbId || null;
+  } catch {
+    return null;
   }
 }
 
@@ -338,6 +389,129 @@ async function scrapeNontongo(tmdbId: string, type: string, season?: number, epi
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// SOURCE 9: YTS Torrents (Movies — high quality with real sizes)
+// ═══════════════════════════════════════════════════════════════════
+async function scrapeYTS(tmdbId: string, title: string): Promise<ExtractedStream[]> {
+  try {
+    const imdbId = await getIMDBId(tmdbId, 'movie');
+    if (!imdbId) {
+      log.warn('[ExtractAll] YTS: No IMDB ID for', { tmdbId });
+      return [];
+    }
+
+    // YTS supports query by IMDB ID
+    const res = await proxyFetch(
+      `https://yts.mx/api/v2/list_movies.json?query_term=${imdbId}&limit=1`,
+      12000
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+
+    const movies = data?.data?.movies;
+    if (!movies || movies.length === 0) return [];
+
+    const movie = movies[0];
+    const streams: ExtractedStream[] = [];
+
+    for (const torrent of movie.torrents || []) {
+      if (!torrent.hash) continue;
+      const magnetUrl = buildMagnetLink(torrent.hash, `${movie.title_long || title}`);
+      streams.push({
+        url: magnetUrl,
+        quality: torrent.quality || 'unknown',
+        type: 'magnet',
+        provider: 'YTS',
+        size: torrent.size || undefined,
+        seeds: torrent.seeds || 0,
+        peers: torrent.peers || 0,
+        captions: [],
+      });
+    }
+
+    return streams;
+  } catch (e) {
+    log.warn('[ExtractAll] YTS failed', { error: String(e) });
+    return [];
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SOURCE 10: EZTV Torrents (TV Shows — by IMDB ID)
+// ═══════════════════════════════════════════════════════════════════
+async function scrapeEZTV(tmdbId: string, season?: number, episode?: number): Promise<ExtractedStream[]> {
+  try {
+    const imdbId = await getIMDBId(tmdbId, 'tv');
+    if (!imdbId) {
+      log.warn('[ExtractAll] EZTV: No IMDB ID for', { tmdbId });
+      return [];
+    }
+
+    // EZTV uses numeric IMDB ID (without 'tt' prefix)
+    const numericImdb = imdbId.replace('tt', '');
+    const res = await proxyFetch(
+      `https://eztvx.to/api/get-torrents?imdb_id=${numericImdb}&limit=100`,
+      12000
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+
+    const torrents = data?.torrents;
+    if (!torrents || torrents.length === 0) return [];
+
+    const streams: ExtractedStream[] = [];
+    const targetSeason = season ?? 1;
+    const targetEpisode = episode ?? 1;
+
+    for (const t of torrents) {
+      // Filter to matching season/episode
+      if (t.season !== undefined && t.episode !== undefined) {
+        if (Number(t.season) !== targetSeason || Number(t.episode) !== targetEpisode) continue;
+      } else {
+        // Try to parse from title: S01E01 format
+        const seMatch = t.title?.match(/S(\d{1,2})E(\d{1,2})/i);
+        if (seMatch) {
+          const s = parseInt(seMatch[1]);
+          const e = parseInt(seMatch[2]);
+          if (s !== targetSeason || e !== targetEpisode) continue;
+        } else {
+          continue; // Can't determine season/episode, skip
+        }
+      }
+
+      if (!t.hash) continue;
+      const magnetUrl = buildMagnetLink(t.hash, t.title || `S${targetSeason}E${targetEpisode}`);
+
+      // Determine quality from filename
+      let quality = 'unknown';
+      const titleLower = (t.title || '').toLowerCase();
+      if (titleLower.includes('2160p') || titleLower.includes('4k')) quality = '2160p';
+      else if (titleLower.includes('1080p')) quality = '1080p';
+      else if (titleLower.includes('720p')) quality = '720p';
+      else if (titleLower.includes('480p')) quality = '480p';
+
+      const sizeMB = t.size_bytes ? Math.round(t.size_bytes / (1024 * 1024)) : undefined;
+      const sizeStr = sizeMB ? (sizeMB >= 1024 ? `${(sizeMB / 1024).toFixed(1)} GB` : `${sizeMB} MB`) : undefined;
+
+      streams.push({
+        url: magnetUrl,
+        quality,
+        type: 'magnet',
+        provider: 'EZTV',
+        size: sizeStr,
+        seeds: t.seeds || 0,
+        peers: t.peers || 0,
+        captions: [],
+      });
+    }
+
+    return streams;
+  } catch (e) {
+    log.warn('[ExtractAll] EZTV failed', { error: String(e) });
+    return [];
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // MAIN HANDLER: Run ALL sources in parallel
 // ═══════════════════════════════════════════════════════════════════
 export async function POST(request: NextRequest) {
@@ -361,6 +535,9 @@ export async function POST(request: NextRequest) {
       scrapeAutoembed(tmdbId, type, season, episode),
       scrapeVideasy(tmdbId, type, season, episode),
       scrapeNontongo(tmdbId, type, season, episode),
+      // Torrent sources
+      type === 'movie' ? scrapeYTS(tmdbId, title) : Promise.resolve([]),
+      type === 'tv' ? scrapeEZTV(tmdbId, season, episode) : Promise.resolve([]),
     ]);
 
     // Collect all successful streams
@@ -379,13 +556,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Sort: MP4 first (easier to download), then HLS, then by quality
-    const qualityOrder: Record<string, number> = { '2160p': 0, '1080p': 1, '720p': 2, '480p': 3, '360p': 4, 'auto': 5 };
+    // Sort: Torrent/Magnet first (real downloads), then MP4, then HLS
+    const typeOrder: Record<string, number> = { 'magnet': 0, 'torrent': 1, 'mp4': 2, 'hls': 3, 'unknown': 4 };
+    const qualityOrder: Record<string, number> = { '2160p': 0, '1080p': 1, '720p': 2, '480p': 3, '360p': 4, 'auto': 5, 'unknown': 6 };
     allStreams.sort((a, b) => {
-      // MP4 > HLS for downloads
-      if (a.type !== b.type) return a.type === 'mp4' ? -1 : 1;
+      // Type priority: magnet > mp4 > hls
+      const typeDiff = (typeOrder[a.type] ?? 99) - (typeOrder[b.type] ?? 99);
+      if (typeDiff !== 0) return typeDiff;
       // Higher quality first
-      return (qualityOrder[a.quality] ?? 99) - (qualityOrder[b.quality] ?? 99);
+      const qualDiff = (qualityOrder[a.quality] ?? 99) - (qualityOrder[b.quality] ?? 99);
+      if (qualDiff !== 0) return qualDiff;
+      // More seeds first (for torrents)
+      return (b.seeds ?? 0) - (a.seeds ?? 0);
     });
 
     const sourcesChecked = results.length;

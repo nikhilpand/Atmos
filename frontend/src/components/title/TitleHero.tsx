@@ -26,7 +26,7 @@ export default function TitleHero({ detail, mediaType, isInWatchlist, onToggleWa
     : `/watch/${id}?type=movie`;
 
   const handlePlayHover = () => {
-    fetch(`/api/resolve?tmdbId=${id}&type=${mediaType}&s=1&e=1`).catch(() => { });
+    fetch(`/api/resolve?id=${id}&type=${mediaType}&season=1&episode=1`).catch(() => { });
   };
 
   return (

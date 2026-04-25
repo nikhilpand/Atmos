@@ -30,21 +30,25 @@ export function useTelemetryFlush() {
         // Silent fail
       }
 
-      // ── Supabase Telemetry Sync ──
+      // ── Supabase Telemetry Sync (optional — table may not exist) ──
       const user = useAuthStore.getState().user;
       if (supabase) {
-        const supabaseEvents = events.map(e => ({
-          user_id: user?.id || null,
-          provider_id: e.providerId,
-          tmdb_id: e.tmdbId,
-          category: e.category,
-          success: e.success,
-          latency_ms: e.latencyMs,
-          created_at: new Date(e.timestamp).toISOString()
-        }));
-        supabase.from('telemetry').insert(supabaseEvents).then(({ error }) => {
-          if (error) console.error("Telemetry sync failed:", error);
-        });
+        try {
+          const supabaseEvents = events.map(e => ({
+            user_id: user?.id || null,
+            provider_id: e.providerId,
+            tmdb_id: e.tmdbId,
+            category: e.category,
+            success: e.success,
+            latency_ms: e.latencyMs,
+            created_at: new Date(e.timestamp).toISOString()
+          }));
+          supabase.from('telemetry').insert(supabaseEvents).then(() => {
+            // Silent — table may not exist
+          });
+        } catch {
+          // Telemetry table doesn't exist, ignore
+        }
       }
     };
 

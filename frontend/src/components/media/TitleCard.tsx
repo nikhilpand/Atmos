@@ -21,7 +21,7 @@ export default function TitleCard({ item }: TitleCardProps) {
 
   const handleHover = () => {
     // Fire and forget pre-warm request
-    fetch(`/api/resolve?tmdbId=${id}&type=${type}&s=1&e=1`).catch(() => { });
+    fetch(`/api/resolve?id=${id}&type=${type}&season=1&episode=1`).catch(() => { });
   };
 
   return (
