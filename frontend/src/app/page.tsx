@@ -10,6 +10,7 @@ import { Play, Info } from 'lucide-react';
 import { fetchTrending, fetchHomeRow, type TMDBItem } from '@/lib/api';
 import { HOME_ROWS, GENRES } from '@/lib/constants';
 import { useTelemetryFlush } from '@/hooks/useTelemetryFlush';
+import { Spotlight } from '@/components/blocks/spotlight-new';
 
 // ─── Hero Section ───────────────────────────────────────────────────
 function HeroSection() {
@@ -24,7 +25,7 @@ function HeroSection() {
           .slice(0, 5);
         setHeroes(items);
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   // Auto-rotate
@@ -62,6 +63,13 @@ function HeroSection() {
       {/* Gradients */}
       <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-black/20 z-10" />
       <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-transparent to-transparent z-10" />
+
+      {/* Spotlight */}
+      <Spotlight
+        gradientFirst="radial-gradient(68.54% 68.72% at 55.02% 31.46%, hsla(271, 91%, 65%, .12) 0, hsla(271, 91%, 45%, .04) 50%, hsla(271, 91%, 35%, 0) 80%)"
+        gradientSecond="radial-gradient(50% 50% at 50% 50%, hsla(187, 92%, 45%, .08) 0, hsla(187, 92%, 35%, .02) 80%, transparent 100%)"
+        gradientThird="radial-gradient(50% 50% at 50% 50%, hsla(271, 91%, 65%, .06) 0, hsla(271, 91%, 45%, .02) 80%, transparent 100%)"
+      />
 
       {/* Content */}
       <div className="absolute bottom-0 left-0 right-0 z-20 pb-12 px-4 sm:px-6 lg:px-8">
@@ -112,9 +120,8 @@ function HeroSection() {
               <button
                 key={i}
                 onClick={() => setActiveIndex(i)}
-                className={`h-1 rounded-full transition-all duration-500 ${
-                  i === activeIndex ? 'w-8 bg-white' : 'w-3 bg-white/30 hover:bg-white/50'
-                }`}
+                className={`h-1 rounded-full transition-all duration-500 ${i === activeIndex ? 'w-8 bg-white' : 'w-3 bg-white/30 hover:bg-white/50'
+                  }`}
               />
             ))}
           </div>
@@ -188,7 +195,7 @@ export default function Home() {
     <div className="min-h-screen pb-24">
       <FrostedNavbar />
       <HeroSection />
-      
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <GenreBar />
         <ContinueWatchingRow />

@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import ParticleCanvas from "@/components/generative/ParticleCanvas";
 import Providers from "@/components/ui/Providers";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { CosmicBackground } from "@/components/generative/CosmicBackground";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -45,10 +45,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.className} min-h-screen bg-black text-white selection:bg-white/30 overflow-x-hidden`}>
+      <body className={`${inter.className} min-h-screen bg-black text-white selection:bg-violet-500/30 overflow-x-hidden`}>
         <Providers>
-          {/* Generative Background (Desktop Only) */}
-          <ParticleCanvas />
+          {/* Aceternity Cosmic Background */}
+          <CosmicBackground />
           
           {/* Main Content Layer */}
           <main className="relative z-10">
