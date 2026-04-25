@@ -416,7 +416,7 @@ function DownloadPageInner() {
               {titleInfo.spoken_languages && titleInfo.spoken_languages.length > 0 && (
                 <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                   <Globe size={12} className="text-white/30" />
-                  {titleInfo.spoken_languages.slice(0, 3).map(l => (
+                  {titleInfo.spoken_languages.slice(0, 3).map((l: any) => (
                     <span key={l.iso_639_1} className="text-white/40 text-xs">{l.english_name}</span>
                   ))}
                 </div>

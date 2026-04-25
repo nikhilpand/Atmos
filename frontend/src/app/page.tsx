@@ -4,10 +4,12 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import FrostedNavbar from "@/components/ui/FrostedNavbar";
 import ContentRow from "@/components/media/ContentRow";
+import ContinueWatchingRow from "@/components/media/ContinueWatchingRow";
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, Info } from 'lucide-react';
 import { fetchTrending, fetchHomeRow, type TMDBItem } from '@/lib/api';
 import { HOME_ROWS, GENRES } from '@/lib/constants';
+import { useTelemetryFlush } from '@/hooks/useTelemetryFlush';
 
 // ─── Hero Section ───────────────────────────────────────────────────
 function HeroSection() {
@@ -180,6 +182,8 @@ function GenreBar() {
 
 // ─── Home Page ──────────────────────────────────────────────────────
 export default function Home() {
+  useTelemetryFlush();
+
   return (
     <div className="min-h-screen pb-24">
       <FrostedNavbar />
@@ -187,6 +191,7 @@ export default function Home() {
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <GenreBar />
+        <ContinueWatchingRow />
         {HOME_ROWS.map(row => (
           <FetchableRow key={row.id} config={row} />
         ))}

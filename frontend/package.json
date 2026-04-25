@@ -13,7 +13,6 @@
     "@supabase/supabase-js": "^2.103.3",
     "@tanstack/react-query": "^5.99.1",
     "@vercel/speed-insights": "^2.0.0",
-    "clsx": "^2.1.1",
     "framer-motion": "^12.38.0",
     "hls.js": "^1.6.16",
     "lucide-react": "^1.8.0",
@@ -21,7 +20,6 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-p5": "^1.4.1",
-    "tailwind-merge": "^3.5.0",
     "zustand": "^5.0.12"
   },
   "devDependencies": {

@@ -19,9 +19,15 @@ export default function TitleCard({ item }: TitleCardProps) {
   const year = (item.release_date || item.first_air_date || '').slice(0, 4);
   const imgSrc = posterUrl(item.poster_path, 'medium');
 
+  const handleHover = () => {
+    // Fire and forget pre-warm request
+    fetch(`/api/resolve?tmdbId=${id}&type=${type}&s=1&e=1`).catch(() => {});
+  };
+
   return (
-    <Link href={`/title/${id}?type=${type}&title=${encodeURIComponent(title)}`} prefetch={false}>
+    <Link href={`/title/${id}?type=${type}&title=${encodeURIComponent(title)}`} prefetch={true}>
       <motion.div
+        onMouseEnter={handleHover}
         whileHover={{ y: -6, scale: 1.04 }}
         whileTap={{ scale: 0.97 }}
         transition={{ type: "spring", stiffness: 400, damping: 25 }}

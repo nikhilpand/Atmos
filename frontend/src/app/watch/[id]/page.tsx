@@ -9,6 +9,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import StreamPlayer from '@/components/player/StreamPlayer';
 import ProviderSelector from '@/components/player/ProviderSelector';
 import { resolveStream, fetchTitle, type Episode } from '@/lib/api';
+import { DEFAULT_PROVIDERS, buildProviderUrl, type Provider } from '@/lib/providers';
+import { useWatchStore } from '@/store/useWatchStore';
 import { TMDB_IMAGE_BASE } from '@/lib/constants';
 
 // ─── Watch Page Inner (needs Suspense for useSearchParams) ──────────
@@ -33,16 +35,22 @@ function WatchPageInner() {
   const [showEpisodes, setShowEpisodes] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [selectedSeason, setSelectedSeason] = useState(season);
+  const [usingStaticFallback, setUsingStaticFallback] = useState(false);
 
-  // ── Resolve stream providers (only in TMDB/iframe mode) ──
+  // ═══════════════════════════════════════════════════════════════════
+  // PARALLEL DATA FETCHING — All 3 fire simultaneously, no waterfall
+  // ═══════════════════════════════════════════════════════════════════
+
+  // ── 1. Resolve stream providers IMMEDIATELY (no waiting for category) ──
+  // The server does its own TMDB fetch in parallel for classification.
   const { data: streamData, isLoading: isResolving } = useQuery({
     queryKey: ['resolve', tmdbId, mediaType, season, episode],
     queryFn: () => resolveStream(tmdbId, mediaType, season, episode),
     enabled: !!tmdbId && !fileId,
-    staleTime: 60 * 60 * 1000,
+    staleTime: 12 * 60 * 60 * 1000,
   });
 
-  // ── Fetch title metadata ──
+  // ── 2. Fetch title metadata (parallel with resolve) ──
   const { data: titleData } = useQuery({
     queryKey: ['title', tmdbId, mediaType],
     queryFn: () => fetchTitle(tmdbId, mediaType, titleHint),
@@ -50,7 +58,7 @@ function WatchPageInner() {
     staleTime: 24 * 60 * 60 * 1000,
   });
 
-  // ── Fetch episodes for the selected season ──
+  // ── 3. Fetch episodes for TV (parallel with everything) ──
   const { data: episodesData } = useQuery({
     queryKey: ['episodes', tmdbId, selectedSeason],
     queryFn: async () => {
@@ -62,7 +70,54 @@ function WatchPageInner() {
     staleTime: 60 * 60 * 1000,
   });
 
-  const providers = useMemo(() => streamData?.providers || [], [streamData?.providers]);
+  // ── 4. Pre-resolve NEXT episode while current one plays (TV only) ──
+  useQuery({
+    queryKey: ['resolve', tmdbId, mediaType, season, episode + 1],
+    queryFn: () => resolveStream(tmdbId, mediaType, season, episode + 1),
+    enabled: mediaType === 'tv' && !!tmdbId && !fileId && !!streamData,
+    staleTime: 12 * 60 * 60 * 1000,
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // 500ms STATIC FALLBACK — Start iframe instantly if API is slow
+  // ═══════════════════════════════════════════════════════════════════
+  const staticFallbackProviders = useMemo(() => {
+    if (!tmdbId || fileId) return [];
+    return DEFAULT_PROVIDERS.slice(0, 3).map((p: Provider) => ({
+      id: p.id,
+      name: p.name,
+      url: buildProviderUrl(p, tmdbId, mediaType as 'movie' | 'tv', season, episode),
+      priority: p.priority,
+    }));
+  }, [tmdbId, mediaType, season, episode, fileId]);
+
+  // Use static fallback if resolve hasn't returned within 500ms
+  useEffect(() => {
+    if (streamData || fileId) return;
+    const timer = setTimeout(() => {
+      if (!streamData && staticFallbackProviders.length > 0) {
+        setUsingStaticFallback(true);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [streamData, staticFallbackProviders, fileId]);
+
+  // Clear static fallback once real data arrives
+  useEffect(() => {
+    if (streamData && usingStaticFallback) {
+      setUsingStaticFallback(false);
+    }
+  }, [streamData, usingStaticFallback]);
+
+  // ═══════════════════════════════════════════════════════════════════
+  // DERIVED STATE
+  // ═══════════════════════════════════════════════════════════════════
+  const providers = useMemo(() => {
+    if (streamData?.providers?.length) return streamData.providers;
+    if (usingStaticFallback) return staticFallbackProviders;
+    return [];
+  }, [streamData?.providers, usingStaticFallback, staticFallbackProviders]);
+
   const titleInfo = titleData?.detail;
   const seasons = useMemo(() => titleData?.seasons || [], [titleData?.seasons]);
   const episodes = episodesData || [];
@@ -70,7 +125,7 @@ function WatchPageInner() {
 
   // Filter out Season 0 (Specials) unless it's the only one
   const validSeasons = useMemo(() => 
-    seasons.filter(s => s.season_number > 0 || seasons.length === 1),
+    seasons.filter((s: any) => s.season_number > 0 || seasons.length === 1),
     [seasons]
   );
 
@@ -80,6 +135,40 @@ function WatchPageInner() {
       setTimeout(() => setActiveProviderId(providers[0].id), 0);
     }
   }, [providers, activeProviderId]);
+
+  // ── Track watch progress → Zustand store (for Continue Watching) ──
+  const updateProgress = useWatchStore(s => s.updateProgress);
+  const lastProgressRef = React.useRef(0);
+  
+  useEffect(() => {
+    const handleProgress = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail || !tmdbId) return;
+      
+      // Throttle: only write to store every 10 seconds
+      const now = Date.now();
+      if (now - lastProgressRef.current < 10000) return;
+      lastProgressRef.current = now;
+
+      updateProgress({
+        tmdbId,
+        mediaType,
+        title: displayTitle,
+        posterPath: titleInfo?.poster_path || null,
+        backdropPath: titleInfo?.backdrop_path || null,
+        season: mediaType === 'tv' ? season : undefined,
+        episode: mediaType === 'tv' ? episode : undefined,
+        progress: detail.progress,
+        currentTime: detail.currentTime,
+        duration: detail.duration,
+        genreIds: titleInfo?.genres?.map((g: { id: number }) => g.id) || [],
+        category: (streamData as unknown as Record<string, unknown>)?.category as string || undefined,
+      });
+    };
+
+    window.addEventListener('atmos:progress', handleProgress);
+    return () => window.removeEventListener('atmos:progress', handleProgress);
+  }, [tmdbId, mediaType, season, episode, displayTitle, titleInfo, streamData, updateProgress]);
 
   // ── Dynamic page title ──
   useEffect(() => {
@@ -136,9 +225,9 @@ function WatchPageInner() {
   };
 
   // ── Next episode ──
-  const currentSeasonData = validSeasons.find(s => s.season_number === season);
+  const currentSeasonData = validSeasons.find((s: any) => s.season_number === season);
   const hasNextEpisode = currentSeasonData ? episode < currentSeasonData.episode_count : false;
-  const hasNextSeason = validSeasons.some(s => s.season_number === season + 1);
+  const hasNextSeason = validSeasons.some((s: any) => s.season_number === season + 1);
 
   const goNext = () => {
     if (hasNextEpisode) {
@@ -152,7 +241,7 @@ function WatchPageInner() {
     if (episode > 1) {
       goToEpisode(season, episode - 1);
     } else if (season > 1) {
-      const prevSeason = validSeasons.find(s => s.season_number === season - 1);
+      const prevSeason = validSeasons.find((s: any) => s.season_number === season - 1);
       if (prevSeason) goToEpisode(season - 1, prevSeason.episode_count);
     }
   };
@@ -313,7 +402,7 @@ function WatchPageInner() {
               {/* Season Selector */}
               <div className="px-5 py-3 border-b border-white/5">
                 <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1">
-                  {validSeasons.map(s => (
+                  {validSeasons.map((s: any) => (
                     <button
                       key={s.season_number}
                       onClick={() => setSelectedSeason(s.season_number)}

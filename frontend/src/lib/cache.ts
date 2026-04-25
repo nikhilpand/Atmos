@@ -49,24 +49,3 @@ export function createTTLCache<T>(ttlMs: number, maxEntries = 500): TTLCache<T> 
   };
 }
 
-/**
- * Simple single-value TTL cache (for caching one object like health data).
- */
-export function createSingleCache<T>(ttlMs: number) {
-  let data: T | null = null;
-  let timestamp = 0;
-
-  return {
-    get(): T | null {
-      return Date.now() - timestamp < ttlMs ? data : null;
-    },
-    set(value: T): void {
-      data = value;
-      timestamp = Date.now();
-    },
-    clear(): void {
-      data = null;
-      timestamp = 0;
-    },
-  };
-}

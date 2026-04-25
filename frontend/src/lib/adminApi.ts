@@ -12,7 +12,7 @@ export function getToken(): string {
 }
 
 /** Store the admin session token */
-export function setToken(token: string) {
+function setToken(token: string) {
   sessionStorage.setItem("atmos_admin_token", token);
   localStorage.setItem("atmos_admin_token", token);
 }

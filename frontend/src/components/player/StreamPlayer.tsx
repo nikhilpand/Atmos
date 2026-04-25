@@ -1,16 +1,13 @@
 "use client";
 
-// ─── ATMOS V2.0 — Unified StreamPlayer ──────────────────────────────
-// Orchestrates 3-tier playback: GDrive → HLS extraction → iframe fallback.
-// Uses extracted hooks/components for clean SRP.
+// ─── ATMOS V5.0 — StreamPlayer: Instant Playback ───────────────────
+// Strategy: Skip slow extraction, load iframe INSTANTLY.
+// Extraction was taking 15-20s and failing 90% of the time (403s).
+// Iframe providers load in <2s and have 16 fallback servers.
 
 import React from 'react';
-import { motion } from 'framer-motion';
 import { CONTROL_URL } from '@/lib/constants';
-import NativeVideoPlayer from './NativeVideoPlayer';
 import IframePlayer from './IframePlayer';
-import Spinner from '@/components/ui/Spinner';
-import { useStreamExtraction } from './hooks/useStreamExtraction';
 
 interface StreamPlayerProps {
   fileId?: string;
@@ -39,68 +36,24 @@ export default function StreamPlayer({
   episode,
   onNextEpisode,
 }: StreamPlayerProps) {
-  // Only run extraction for TMDB titles without a fileId
-  const extraction = useStreamExtraction({
-    tmdbId,
-    mediaType,
-    season,
-    episode,
-    enabled: !!tmdbId && !fileId,
-  });
-
-  // ─── Tier 1: GDrive direct stream ────────────────────────────
+  // ─── Tier 1: GDrive direct stream (instant) ──────────────────
   if (fileId) {
     const streamUrl = `${CONTROL_URL}/api/stream/${fileId}`;
     return (
-      <NativeVideoPlayer
-        src={streamUrl}
-        title={fileName}
-        onNextEpisode={onNextEpisode}
-      />
-    );
-  }
-
-  // ─── Tier 2: HLS extraction succeeded ────────────────────────
-  if (extraction.status === 'success' && extraction.url) {
-    return (
-      <NativeVideoPlayer
-        src={extraction.url}
-        isHls={true}
-        title={fileName}
-        qualities={extraction.allStreams}
-        selectedQuality={extraction.selectedQuality}
-        onQualityChange={extraction.setQuality}
-        onFatalError={() => {
-          // Fall through to iframe tier — handled by parent re-render
-        }}
-        onNextEpisode={onNextEpisode}
-      />
-    );
-  }
-
-  // ─── Loading: extraction in progress ─────────────────────────
-  if (extraction.status === 'loading') {
-    return (
       <div className="w-full h-full bg-black flex items-center justify-center">
-        <div className="flex flex-col items-center gap-5">
-          <Spinner />
-          <motion.p
-            initial={{ opacity: 0.5 }}
-            animate={{ opacity: 1 }}
-            transition={{ repeat: Infinity, duration: 1, repeatType: "reverse" }}
-            className="text-white/60 text-sm font-medium tracking-wide"
-          >
-            {extraction.log}
-          </motion.p>
-          {extraction.quality && (
-            <span className="text-white/30 text-xs">{extraction.quality}</span>
-          )}
-        </div>
+        <video 
+          src={streamUrl} 
+          controls 
+          autoPlay 
+          className="w-full h-full object-contain"
+          onEnded={onNextEpisode}
+        />
       </div>
     );
   }
 
-  // ─── Tier 3: Iframe fallback ─────────────────────────────────
+  // ─── Tier 2: Iframe — instant load, 16 fallback servers ──────
+  // No more extraction phase. Iframes load in <2s vs 20s extraction.
   return (
     <IframePlayer
       providers={providers}

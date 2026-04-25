@@ -25,6 +25,10 @@ export default function TitleHero({ detail, mediaType, isInWatchlist, onToggleWa
     ? `/watch/${id}?type=tv&s=1&e=1`
     : `/watch/${id}?type=movie`;
 
+  const handlePlayHover = () => {
+    fetch(`/api/resolve?tmdbId=${id}&type=${mediaType}&s=1&e=1`).catch(() => {});
+  };
+
   return (
     <section className="relative w-full min-h-[70vh] max-h-[800px] overflow-hidden">
       {/* Backdrop Image */}
@@ -121,8 +125,8 @@ export default function TitleHero({ detail, mediaType, isInWatchlist, onToggleWa
 
             {/* CTA Buttons */}
             <div className="flex gap-3">
-              <Link href={playUrl}>
-                <div className="relative group">
+              <Link href={playUrl} prefetch={true}>
+                <div className="relative group" onMouseEnter={handlePlayHover}>
                   <div className="absolute -inset-1 bg-white/20 rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-500 animate-pulse" />
                   <motion.button
                     whileHover={{ scale: 1.05 }}

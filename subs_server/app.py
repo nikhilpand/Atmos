@@ -42,22 +42,21 @@ app.add_middleware(
 # ═══════════════════════════════════════════════════════════════════════
 
 PROVIDERS = [
-    {"id": "vidlink", "name": "VidLink", "pattern": "https://atmos-proxy.nkp9450732628.workers.dev/{type}/{tmdb_id}", "style": "path"},
-    {"id": "vidlink_jw", "name": "VidLink JW", "pattern": "https://atmos-proxy.nkp9450732628.workers.dev/{type}/{tmdb_id}", "style": "path"},
-    {"id": "vidsrc_icu", "name": "VidSrc ICU", "pattern": "https://vidsrc.icu/embed/{type}/{tmdb_id}", "style": "path"},
+    # Tier 1: Fastest (<1s), verified 2026-04-25
     {"id": "videasy", "name": "Videasy", "pattern": "https://player.videasy.net/{type}/{tmdb_id}", "style": "path"},
-    {"id": "nontongo", "name": "NonTongo", "pattern": "https://nontongo.win/embed/{type}/{tmdb_id}", "style": "path"},
-    {"id": "vidjoy", "name": "VidJoy", "pattern": "https://vidjoy.pro/embed/{type}/{tmdb_id}", "style": "path"},
-    {"id": "vidfast", "name": "VidFast", "pattern": "https://vidfast.pro/{type}/{tmdb_id}", "style": "path"},
-    {"id": "autoembed", "name": "AutoEmbed", "pattern": "https://autoembed.co/{type}/tmdb/{tmdb_id}", "style": "dash"},
+    {"id": "vidsrc_icu", "name": "VidSrc ICU", "pattern": "https://vidsrc.icu/embed/{type}/{tmdb_id}", "style": "path"},
+    {"id": "vidlink", "name": "VidLink", "pattern": "https://atmos-proxy.nkp9450732628.workers.dev/{type}/{tmdb_id}", "style": "path"},
     {"id": "2embed", "name": "2Embed", "pattern": "https://www.2embed.cc/embed/{tmdb_id}", "style": "custom"},
+    # Tier 2: Fast (<2s), reliable
+    {"id": "vidsrc_dev", "name": "VidSrc Dev", "pattern": "https://vidsrc.dev/embed/{type}/{tmdb_id}", "style": "path"},
+    {"id": "nontongo", "name": "NonTongo", "pattern": "https://nontongo.win/embed/{type}/{tmdb_id}", "style": "path"},
+    {"id": "vidfast", "name": "VidFast", "pattern": "https://vidfast.pro/{type}/{tmdb_id}", "style": "path"},
+    {"id": "vidjoy", "name": "VidJoy", "pattern": "https://vidjoy.pro/embed/{type}/{tmdb_id}", "style": "path"},
+    {"id": "vidsrc_wtf", "name": "VidSrc WTF", "pattern": "https://vidsrc.wtf/api/3/{type}/?id={tmdb_id}", "style": "query"},
+    # Tier 3: Slower fallbacks
+    {"id": "111movies", "name": "111Movies", "pattern": "https://111movies.com/{type}/{tmdb_id}", "style": "path"},
+    {"id": "autoembed", "name": "AutoEmbed", "pattern": "https://autoembed.co/{type}/tmdb/{tmdb_id}", "style": "dash"},
     {"id": "moviesapi", "name": "MoviesAPI", "pattern": "https://moviesapi.club/{type}/{tmdb_id}", "style": "dash"},
-    {"id": "vidsrc_xyz", "name": "VidSrc Pro", "pattern": "https://vidsrc.xyz/embed/{type}/{tmdb_id}", "style": "path"},
-    {"id": "vidsrc_me", "name": "VidSrc ME", "pattern": "https://vidsrc.me/embed/{type}?tmdb={tmdb_id}", "style": "query"},
-    {"id": "embed_su", "name": "Embed SU", "pattern": "https://embed.su/embed/{type}/{tmdb_id}", "style": "path"},
-    {"id": "vidsrc_cc", "name": "VidSrc CC", "pattern": "https://vidsrc.cc/v2/embed/{type}/{tmdb_id}", "style": "path"},
-    {"id": "multiembed", "name": "MultiEmbed", "pattern": "https://multiembed.mov/?video_id={tmdb_id}&tmdb=1", "style": "query"},
-    {"id": "vidsrc_in", "name": "VidSrc IN", "pattern": "https://vidsrc.in/embed/{type}/{tmdb_id}", "style": "path"},
 ]
 
 TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "")
@@ -452,6 +451,153 @@ async def report_provider(request: Request):
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# TELEMETRY ENGINE — Self-learning provider affinity from real data
+# ═══════════════════════════════════════════════════════════════════════
+
+_telemetry_store: Dict[str, List[dict]] = {}  # "provider:category" -> [{success, latency, ts}]
+TELEMETRY_FILE = "/tmp/telemetry.json"
+
+def _load_telemetry():
+    global _telemetry_store
+    try:
+        if os.path.exists(TELEMETRY_FILE):
+            with open(TELEMETRY_FILE) as f:
+                _telemetry_store = json.load(f)
+    except Exception:
+        pass
+
+def _save_telemetry():
+    try:
+        with open(TELEMETRY_FILE, "w") as f:
+            json.dump(_telemetry_store, f)
+    except Exception:
+        pass
+
+
+@app.post("/telemetry/batch")
+async def batch_telemetry(request: Request):
+    """
+    Receives a batch of provider performance events from the frontend.
+    Each event: {providerId, tmdbId, category, success, latencyMs, timestamp}
+    """
+    try:
+        body = await request.json()
+        events = body.get("events", [])
+    except Exception:
+        return JSONResponse({"error": "Invalid body"}, status_code=400)
+
+    if not events or not isinstance(events, list):
+        return JSONResponse({"error": "No events"}, status_code=400)
+
+    recorded = 0
+    with _sync_lock:
+        for event in events[:100]:  # Max 100 per batch
+            pid = event.get("providerId", "")
+            category = event.get("category", "general")
+            success = event.get("success", False)
+            latency = event.get("latencyMs", 9999)
+            ts = event.get("timestamp", time.time() * 1000)
+
+            if not pid:
+                continue
+
+            key = f"{pid}:{category}"
+            if key not in _telemetry_store:
+                _telemetry_store[key] = []
+
+            _telemetry_store[key].append({
+                "s": 1 if success else 0,
+                "l": min(latency, 30000),
+                "t": ts,
+            })
+
+            # Keep last 200 events per key
+            if len(_telemetry_store[key]) > 200:
+                _telemetry_store[key] = _telemetry_store[key][-150:]
+
+            recorded += 1
+
+        # Also feed into user_reports for backward compatibility
+        for event in events[:100]:
+            pid = event.get("providerId", "")
+            tmdb_id = event.get("tmdbId", "")
+            success = event.get("success", False)
+            if pid and tmdb_id:
+                rkey = f"{tmdb_id}:movie:0:0"
+                if rkey not in _user_reports:
+                    _user_reports[rkey] = {}
+                if pid not in _user_reports[rkey]:
+                    _user_reports[rkey][pid] = {"ok": 0, "fail": 0}
+                if success:
+                    _user_reports[rkey][pid]["ok"] += 1
+                else:
+                    _user_reports[rkey][pid]["fail"] += 1
+
+        _save_telemetry()
+
+    return {"status": "ok", "recorded": recorded}
+
+
+@app.get("/provider-affinity")
+def get_provider_affinity():
+    """
+    Returns dynamic affinity scores computed from real telemetry.
+    Response: { "anime": {"videasy": 18, "vidsrc_icu": 12, ...}, "netflix": {...}, ... }
+    
+    The frontend resolve engine uses these to replace the static affinity matrix.
+    """
+    # Compute affinity from telemetry
+    affinity: Dict[str, Dict[str, float]] = {}
+    cutoff = (time.time() - 7 * 86400) * 1000  # Last 7 days in ms
+
+    with _sync_lock:
+        for key, events in _telemetry_store.items():
+            parts = key.split(":", 1)
+            if len(parts) != 2:
+                continue
+            pid, category = parts
+
+            # Filter recent events
+            recent = [e for e in events if e.get("t", 0) > cutoff]
+            if len(recent) < 5:
+                continue  # Need minimum data points
+
+            total = len(recent)
+            successes = sum(1 for e in recent if e.get("s"))
+            success_rate = successes / total
+            avg_latency = sum(e.get("l", 3000) for e in recent if e.get("s")) / max(1, successes)
+
+            # Dynamic affinity: high success + low latency = high boost
+            # Scale: -15 to +25 (matches static matrix range)
+            affinity_score = round(
+                (success_rate * 25)  # Max +25 for 100% success
+                - (avg_latency / 500)  # Penalty for slow providers
+            )
+            affinity_score = max(-15, min(25, affinity_score))
+
+            if category not in affinity:
+                affinity[category] = {}
+            affinity[category][pid] = affinity_score
+
+    return {
+        "affinity": affinity,
+        "data_points": sum(len(v) for v in _telemetry_store.values()),
+        "categories": len(affinity),
+        "algorithm": "telemetry-v1",
+    }
+
+
+# Load telemetry on startup
+_original_start = start_health_checker
+def _enhanced_start():
+    _load_telemetry()
+    _original_start()
+    print("[ATMOS] Telemetry Engine loaded")
+
+# Monkey-patch startup
+app.on_event("startup")(_enhanced_start)
+
+# ═══════════════════════════════════════════════════════════════════════
 # SUBTITLE SERVICE (original, kept intact)
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -543,18 +689,25 @@ async def search_subtitles(
 def health():
     return {
         "status": "ok",
-        "version": "2.0.0",
-        "services": ["provider-health", "subtitles"],
+        "version": "3.0.0",
+        "services": ["provider-health", "telemetry-engine", "subtitles"],
         "providers_tracked": len(_provider_health),
         "titles_prewarmed": len(_prewarm_cache),
         "user_reports": len(_user_reports),
+        "telemetry_keys": len(_telemetry_store),
+        "telemetry_events": sum(len(v) for v in _telemetry_store.values()),
     }
 
 
 @app.get("/")
 def root():
     return {
-        "service": "ATMOS Provider Health Engine + Subs",
-        "version": "2.0.0",
-        "endpoints": ["/provider-health", "/provider-prewarmed", "/provider-report", "/search", "/health"],
+        "service": "ATMOS Provider Health Engine + Telemetry + Subs",
+        "version": "3.0.0",
+        "endpoints": [
+            "/provider-health", "/provider-prewarmed", "/provider-report",
+            "/recommend", "/telemetry/batch", "/provider-affinity",
+            "/search", "/health",
+        ],
     }
+

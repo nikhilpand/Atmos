@@ -18,6 +18,7 @@ export interface TMDBItem {
   first_air_date?: string;
   genre_ids?: number[];
   popularity?: number;
+  original_language?: string;
 }
 
 export interface TMDBDetail extends TMDBItem {
@@ -63,7 +64,7 @@ export interface Episode {
   vote_average?: number;
 }
 
-export interface TitleDetail {
+interface TitleDetail {
   detail: TMDBDetail;
   cast: CastMember[];
   similar: TMDBItem[];
@@ -71,10 +72,11 @@ export interface TitleDetail {
   seasons?: Season[];
 }
 
-export interface ResolvedStream {
+interface ResolvedStream {
   providers: { id: string; name: string; url: string; priority: number }[];
   fromCache: boolean;
 }
+
 
 // ─── Image URL helpers ──────────────────────────────────────────────
 export function posterUrl(path: string | null | undefined, size: keyof typeof TMDB_POSTER_SIZES = 'large'): string {
@@ -118,21 +120,6 @@ export async function fetchTrending(
   };
 }
 
-// ─── Search ─────────────────────────────────────────────────────────
-export async function searchContent(
-  query: string,
-  page = 1
-): Promise<{ results: TMDBItem[]; page: number; totalPages: number }> {
-  const res = await fetchWithRetry(
-    `${META_URL}/search?query=${encodeURIComponent(query)}&page=${page}`
-  );
-  const data = await res.json();
-  return {
-    results: data.results || [],
-    page: data.page || page,
-    totalPages: data.total_pages || 1,
-  };
-}
 
 // ─── Title Detail ───────────────────────────────────────────────────
 export async function fetchTitle(
@@ -163,11 +150,13 @@ export async function resolveStream(
   tmdbId: string,
   type: 'movie' | 'tv',
   season?: number,
-  episode?: number
+  episode?: number,
+  category?: string,
 ): Promise<ResolvedStream> {
   const params = new URLSearchParams({ id: tmdbId, type });
   if (season) params.set('season', String(season));
   if (episode) params.set('episode', String(episode));
+  if (category) params.set('category', category);
   
   const res = await fetchWithRetry(`/api/resolve?${params}`);
   return res.json();

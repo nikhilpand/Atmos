@@ -123,7 +123,7 @@ function TitlePageInner() {
   const { detail, cast, similar, videos, seasons } = data;
 
   // Find YouTube trailer
-  const trailer = videos?.find(v => v.type === 'Trailer') || videos?.[0];
+  const trailer = videos?.find((v: any) => v.type === 'Trailer') || videos?.[0];
 
   return (
     <div className="min-h-screen pb-20">

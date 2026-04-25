@@ -73,7 +73,7 @@ export const FEATURES = {
   ENABLE_DRIVE_LIBRARY: true,
   PROVIDER_RACE_TIMEOUT_MS: 4000,
   PROVIDER_MAX_FAILURES: 3,
-  STREAM_CACHE_TTL_MS: 60 * 60 * 1000, // 1 hour
+  STREAM_CACHE_TTL_MS: 2 * 60 * 60 * 1000, // 2 hours
   TITLE_CACHE_TTL_MS: 24 * 60 * 60 * 1000, // 24 hours
 } as const;
 
