@@ -48,15 +48,28 @@ export default function AuthModal() {
         setPassword('');
         setUsername('');
       } else {
+        let authEmail = email.trim();
+        
+        // If it doesn't look like an email, assume it's a username and look up the email
+        if (!authEmail.includes('@')) {
+          const { data: fetchedEmail, error: rpcError } = await supabase.rpc('get_email_by_username', { p_username: authEmail });
+          
+          if (rpcError || !fetchedEmail) {
+            throw new Error("Invalid login credentials");
+          }
+          authEmail = fetchedEmail;
+        }
+
         const { error } = await supabase.auth.signInWithPassword({
-          email,
+          email: authEmail,
           password,
         });
         if (error) throw error;
         closeAuthModal();
       }
     } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred');
+      // Supabase's default error is "Invalid login credentials", we'll match it
+      setError(err.message === 'Invalid login credentials' ? 'Invalid username/email or password' : err.message || 'An unexpected error occurred');
     } finally {
       setLoading(false);
     }
@@ -126,16 +139,22 @@ export default function AuthModal() {
               )}
 
               <div>
-                <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Email address</label>
+                <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">
+                  {isSignUp ? 'Email address' : 'Username or Email'}
+                </label>
                 <div className="relative">
-                  <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/25" />
+                  {isSignUp ? (
+                    <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/25" />
+                  ) : (
+                    <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/25" />
+                  )}
                   <input
-                    type="email"
+                    type={isSignUp ? "email" : "text"}
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl py-3 pl-10 pr-4 text-white text-sm focus:outline-none focus:border-violet-500/50 focus:bg-white/[0.06] focus:ring-1 focus:ring-violet-500/20 transition-all placeholder:text-white/15"
-                    placeholder="name@example.com"
+                    placeholder={isSignUp ? "name@example.com" : "Username or email"}
                   />
                 </div>
               </div>

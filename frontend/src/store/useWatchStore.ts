@@ -227,7 +227,7 @@ export const useWatchStore = create<WatchState>()(
             .from('watch_history')
             .select('*')
             .eq('user_id', userId);
-            
+
           if (error) throw error;
           if (!data || data.length === 0) return;
 
@@ -237,7 +237,7 @@ export const useWatchStore = create<WatchState>()(
           for (const row of data) {
             const local = merged[row.key];
             const remoteTime = new Date(row.updated_at).getTime();
-            
+
             if (!local || remoteTime > local.updatedAt) {
               merged[row.key] = {
                 tmdbId: row.tmdb_id,
