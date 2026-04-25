@@ -12,9 +12,10 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Play, X } from 'lucide-react';
 import { useWatchStore, type WatchEntry } from '@/store/useWatchStore';
+import { useShallow } from 'zustand/react/shallow';
 
 export default function ContinueWatchingRow() {
-  const items = useWatchStore(s => s.getContinueWatching());
+  const items = useWatchStore(useShallow(s => s.getContinueWatching()));
   const clearEntry = useWatchStore(s => s.clearEntry);
 
   if (items.length === 0) return null;
