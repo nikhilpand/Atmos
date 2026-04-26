@@ -65,12 +65,21 @@ export const HOME_ROWS = [
   { id: "scifi", title: "Sci-Fi", endpoint: "discover/movie", params: { with_genres: "878" } },
 ] as const;
 
+// ─── Server Pool (for load balancing) ──────────────────────────────
+export const ALL_SERVERS = [
+  { url: CONTROL_URL, role: 'control' },
+  { url: MEDIA_URL, role: 'media' },
+  { url: META_URL, role: 'meta' },
+  { url: SUBS_URL, role: 'subs' },
+] as const;
+
 // ─── Feature Flags ─────────────────────────────────────────────────
 export const FEATURES = {
   ENABLE_USER_AUTH: true,
   ENABLE_WATCHLIST: true,
   ENABLE_WATCH_HISTORY: true,
   ENABLE_DRIVE_LIBRARY: true,
+  ENABLE_LOAD_BALANCING: true,
   PROVIDER_RACE_TIMEOUT_MS: 4000,
   PROVIDER_MAX_FAILURES: 3,
   STREAM_CACHE_TTL_MS: 2 * 60 * 60 * 1000, // 2 hours

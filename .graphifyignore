@@ -1,0 +1,42 @@
+# ── Minified JS (single-line blobs, unparseable) ──
+proxy_vidlink.js
+proxy_vidlink2.js
+vidlink.js
+
+# ── Dead test/utility scripts (never imported) ──
+test.py
+test_fetch.js
+test-movie-web.js
+test_ftp.py
+test_gdrive_upload.py
+test_original.py
+test_scraper.py
+test_stream.py
+test_local.py
+test_parser.py
+test-providers.html
+test-proxy.html
+test2-proxy.html
+vidlink.html
+
+# ── One-off utility scripts (not part of app graph) ──
+upload_frontend.py
+generate_token.py
+local_rename.py
+push_secrets.py
+push_vercel_secrets.sh
+scan_new_providers.sh
+deploy.sh
+
+# ── Standalone infra (no app-level imports) ──
+cloudflare-worker-proxy.js
+
+# ── Build/infra noise ──
+node_modules/
+graphify-out/
+.git/
+.vercel/
+.agent/
+test_env/
+cloudflare-proxy/
+plans/

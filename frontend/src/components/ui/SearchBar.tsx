@@ -25,11 +25,12 @@ export default function SearchBar({ onResultClick }: SearchBarProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const searchTMDB = useCallback(async (q: string) => {
-    if (q.length < 2) { setResults([]); return; }
+    if (q.length < 2) { setResults([]); setActiveIdx(-1); return; }
     setIsLoading(true);
     try {
       const res = await fetch(`${META_URL}/search?query=${encodeURIComponent(q)}&page=1`);
@@ -54,22 +55,51 @@ export default function SearchBar({ onResultClick }: SearchBarProps) {
     if (isOpen && inputRef.current) inputRef.current.focus();
   }, [isOpen]);
 
-  // Close on Escape
+  // Global keyboard: ⌘K to open, Escape to close, arrows + Enter to navigate results
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') { setIsOpen(false); setQuery(''); setResults([]); } };
+    const handler = (e: KeyboardEvent) => {
+      // ⌘K / Ctrl+K to open search
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setIsOpen(true);
+        return;
+      }
+      if (e.key === 'Escape') {
+        setIsOpen(false);
+        setQuery('');
+        setResults([]);
+        setActiveIdx(-1);
+      }
+      if (!isOpen) return;
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setActiveIdx(prev => Math.min(prev + 1, results.length - 1));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setActiveIdx(prev => Math.max(prev - 1, -1));
+      } else if (e.key === 'Enter' && activeIdx >= 0 && results[activeIdx]) {
+        e.preventDefault();
+        onResultClick(results[activeIdx]);
+        setIsOpen(false);
+        setQuery('');
+        setResults([]);
+        setActiveIdx(-1);
+      }
+    };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
+  }, [isOpen, results, activeIdx, onResultClick]);
 
   return (
     <>
       {/* Trigger Button */}
       <button
         onClick={() => setIsOpen(true)}
-        className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-all duration-200 border border-white/10"
+        className="flex items-center gap-1.5 h-9 px-3 rounded-full bg-white/10 hover:bg-white/20 transition-all duration-200 border border-white/10"
         aria-label="Search"
       >
-        <Search size={16} className="text-white/70" />
+        <Search size={14} className="text-white/70" />
+        <span className="hidden sm:inline text-white/30 text-[10px] font-mono border border-white/10 rounded px-1 py-0.5">⌘K</span>
       </button>
 
       {/* Overlay */}
@@ -135,7 +165,7 @@ export default function SearchBar({ onResultClick }: SearchBarProps) {
                         setQuery('');
                         setResults([]);
                       }}
-                      className="w-full flex items-center gap-4 p-3 hover:bg-white/5 transition-colors text-left"
+                      className={`w-full flex items-center gap-4 p-3 transition-colors text-left ${results.indexOf(item) === activeIdx ? 'bg-violet-500/15 border-l-2 border-violet-500' : 'hover:bg-white/5'}`}
                     >
                       <div className="w-12 h-16 rounded-lg overflow-hidden bg-white/5 flex-shrink-0 relative">
                         {item.poster_path ? (

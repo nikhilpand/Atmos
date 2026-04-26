@@ -4,10 +4,11 @@
 import React, { useEffect, useState, Suspense, useCallback, useMemo } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Info, ChevronRight, Tv, Film, Server, Play, X, Download } from 'lucide-react';
+import { ArrowLeft, Info, ChevronRight, Tv, Film, Server, Play, X, Download, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import StreamPlayer from '@/components/player/StreamPlayer';
 import ProviderSelector from '@/components/player/ProviderSelector';
+import UpNextOverlay from '@/components/player/UpNextOverlay';
 import { resolveStream, fetchTitle, type Episode } from '@/lib/api';
 import { DEFAULT_PROVIDERS, buildProviderUrl, type Provider } from '@/lib/providers';
 import { useWatchStore } from '@/store/useWatchStore';
@@ -36,6 +37,8 @@ function WatchPageInner() {
   const [showControls, setShowControls] = useState(true);
   const [selectedSeason, setSelectedSeason] = useState(season);
   const [usingStaticFallback, setUsingStaticFallback] = useState(false);
+  const [showUpNext, setShowUpNext] = useState(false);
+  const [upNextDismissed, setUpNextDismissed] = useState(false);
 
   // ═══════════════════════════════════════════════════════════════════
   // PARALLEL DATA FETCHING — All 3 fire simultaneously, no waterfall
@@ -136,8 +139,14 @@ function WatchPageInner() {
     }
   }, [providers, activeProviderId]);
 
+  // ── Next episode (declared early — needed by progress handler) ──
+  const currentSeasonData = validSeasons.find((s: any) => s.season_number === season);
+  const hasNextEpisode = currentSeasonData ? episode < currentSeasonData.episode_count : false;
+  const hasNextSeason = validSeasons.some((s: any) => s.season_number === season + 1);
+
   // ── Track watch progress → Zustand store (for Continue Watching) ──
   const updateProgress = useWatchStore(s => s.updateProgress);
+  const watchEntries = useWatchStore(s => s.entries);
   const lastProgressRef = React.useRef(0);
   
   useEffect(() => {
@@ -164,11 +173,16 @@ function WatchPageInner() {
         genreIds: titleInfo?.genres?.map((g: { id: number }) => g.id) || [],
         category: (streamData as unknown as Record<string, unknown>)?.category as string || undefined,
       });
+
+      // Trigger Up Next overlay at 92% for TV shows
+      if (mediaType === 'tv' && detail.progress >= 92 && !upNextDismissed && (hasNextEpisode || hasNextSeason)) {
+        setShowUpNext(true);
+      }
     };
 
     window.addEventListener('atmos:progress', handleProgress);
     return () => window.removeEventListener('atmos:progress', handleProgress);
-  }, [tmdbId, mediaType, season, episode, displayTitle, titleInfo, streamData, updateProgress]);
+  }, [tmdbId, mediaType, season, episode, displayTitle, titleInfo, streamData, updateProgress, upNextDismissed, hasNextEpisode, hasNextSeason]);
 
   // ── Dynamic page title ──
   useEffect(() => {
@@ -179,11 +193,13 @@ function WatchPageInner() {
     }
   }, [fileNameParam, displayTitle, mediaType, season, episode]);
 
-  // ── Reset failed providers when season/episode changes ──
+  // ── Reset state when season/episode changes ──
   useEffect(() => {
     setTimeout(() => {
       setFailedProviders(new Set());
       setActiveProviderId('');
+      setShowUpNext(false);
+      setUpNextDismissed(false);
     }, 0);
   }, [season, episode]);
 
@@ -210,6 +226,68 @@ function WatchPageInner() {
     };
   }, []);
 
+  // ── Keyboard shortcuts (Space/F/N/←/→/Esc) ──
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Ignore if typing in an input
+      if ((e.target as HTMLElement)?.tagName === 'INPUT' || (e.target as HTMLElement)?.tagName === 'TEXTAREA') return;
+      
+      switch (e.key) {
+        case ' ':
+        case 'k':
+          e.preventDefault();
+          // Toggle play/pause on iframe (post message)
+          document.querySelector('iframe')?.contentWindow?.postMessage({ type: 'togglePlay' }, '*');
+          break;
+        case 'f':
+        case 'F':
+          e.preventDefault();
+          if (document.fullscreenElement) {
+            document.exitFullscreen();
+          } else {
+            document.documentElement.requestFullscreen();
+          }
+          break;
+        case 'n':
+        case 'N':
+          if (hasNextEpisode || hasNextSeason) goNext();
+          break;
+        case 'p':
+        case 'P':
+          goPrev();
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          if (e.shiftKey && mediaType === 'tv') { goNext(); }
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          if (e.shiftKey && mediaType === 'tv') { goPrev(); }
+          break;
+        case 'Escape':
+          if (showEpisodes) setShowEpisodes(false);
+          else if (showServers) setShowServers(false);
+          else router.push(titleInfo ? `/title/${tmdbId}?type=${mediaType}` : '/');
+          break;
+        case 's':
+        case 'S':
+          setShowServers(prev => !prev);
+          setShowEpisodes(false);
+          break;
+        case 'e':
+        case 'E':
+          if (mediaType === 'tv') {
+            setShowEpisodes(prev => !prev);
+            setShowServers(false);
+          }
+          break;
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [hasNextEpisode, hasNextSeason, showEpisodes, showServers, mediaType, tmdbId, titleInfo, router]);
+
+
   const handleProviderError = useCallback((id: string) => {
     setFailedProviders(prev => new Set(prev).add(id));
   }, []);
@@ -224,10 +302,7 @@ function WatchPageInner() {
     router.push(`/watch/${tmdbId}?type=tv&s=${s}&e=${e}`);
   };
 
-  // ── Next episode ──
-  const currentSeasonData = validSeasons.find((s: any) => s.season_number === season);
-  const hasNextEpisode = currentSeasonData ? episode < currentSeasonData.episode_count : false;
-  const hasNextSeason = validSeasons.some((s: any) => s.season_number === season + 1);
+
 
   const goNext = () => {
     if (hasNextEpisode) {
@@ -266,14 +341,14 @@ function WatchPageInner() {
             transition={{ duration: 0.25 }}
             className="absolute top-0 left-0 right-0 z-50 bg-gradient-to-b from-black/90 via-black/50 to-transparent"
           >
-            <div className="flex items-center justify-between p-4 gap-4">
+            <div className="flex items-center justify-between p-3 sm:p-4 gap-2 sm:gap-4" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0px))' }}>
               {/* Left: Back + Title */}
-              <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                 <button
                   onClick={() => router.push(titleInfo ? `/title/${tmdbId}?type=${mediaType}` : '/')}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 backdrop-blur-xl transition-all border border-white/10 text-sm text-white flex-shrink-0"
+                  className="flex items-center gap-1.5 px-3 sm:px-3 py-2 sm:py-1.5 rounded-full bg-white/10 hover:bg-white/15 backdrop-blur-xl transition-all border border-white/10 text-sm text-white flex-shrink-0"
                 >
-                  <ArrowLeft size={14} /> Back
+                  <ArrowLeft size={16} /> <span className="hidden xs:inline">Back</span>
                 </button>
                 
                 {displayTitle && (
@@ -286,19 +361,19 @@ function WatchPageInner() {
                 )}
               </div>
 
-              {/* Right: Controls */}
-              <div className="flex items-center gap-2 flex-shrink-0">
+              {/* Right: Controls — icons-only on mobile, labels on desktop */}
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
                 {/* Episodes Drawer Toggle (TV only) */}
                 {mediaType === 'tv' && (
                   <button
                     onClick={() => { setShowEpisodes(prev => !prev); setShowServers(false); }}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
+                    className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-2 sm:py-1.5 rounded-full text-xs font-medium transition-all border ${
                       showEpisodes
                         ? 'bg-violet-600/30 border-violet-500/30 text-violet-300'
                         : 'bg-white/10 border-white/10 text-white/70 hover:bg-white/15 hover:text-white'
                     }`}
                   >
-                    <Tv size={12} />
+                    <Tv size={14} />
                     <span className="hidden sm:inline">Episodes</span>
                     <span className="bg-white/10 px-1.5 py-0.5 rounded text-[10px]">S{season}</span>
                   </button>
@@ -307,33 +382,33 @@ function WatchPageInner() {
                 {/* Server Selector Toggle */}
                 <button
                   onClick={() => { setShowServers(prev => !prev); setShowEpisodes(false); }}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
+                  className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-2 sm:py-1.5 rounded-full text-xs font-medium transition-all border ${
                     showServers
                       ? 'bg-violet-600/30 border-violet-500/30 text-violet-300'
                       : 'bg-white/10 border-white/10 text-white/70 hover:bg-white/15 hover:text-white'
                   }`}
                 >
-                  <Server size={12} />
+                  <Server size={14} />
                   <span className="hidden sm:inline">Servers</span>
                   <span className="bg-white/10 px-1.5 py-0.5 rounded text-[10px]">{providers.length}</span>
                 </button>
 
-                {/* Title Info */}
+                {/* Title Info — hidden on small phones */}
                 {titleInfo && (
                   <button
                     onClick={() => router.push(`/title/${tmdbId}?type=${mediaType}`)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 border border-white/10 text-xs text-white/70 hover:text-white transition-all"
+                    className="hidden xs:flex items-center gap-1.5 px-2.5 sm:px-3 py-2 sm:py-1.5 rounded-full bg-white/10 hover:bg-white/15 border border-white/10 text-xs text-white/70 hover:text-white transition-all"
                   >
-                    <Info size={12} /> Details
+                    <Info size={14} /> <span className="hidden sm:inline">Details</span>
                   </button>
                 )}
 
                 {/* Download */}
                 <button
                   onClick={() => router.push(`/download/${tmdbId}?type=${mediaType}`)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-violet-600/30 hover:bg-violet-600/50 border border-violet-500/20 text-xs text-violet-300 hover:text-white transition-all"
+                  className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 sm:py-1.5 rounded-full bg-violet-600/30 hover:bg-violet-600/50 border border-violet-500/20 text-xs text-violet-300 hover:text-white transition-all"
                 >
-                  <Download size={12} />
+                  <Download size={14} />
                   <span className="hidden sm:inline">Download</span>
                 </button>
               </div>
@@ -381,7 +456,7 @@ function WatchPageInner() {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-              className="absolute top-0 right-0 bottom-0 z-[70] w-full max-w-md bg-zinc-900/95 backdrop-blur-2xl border-l border-white/10 flex flex-col"
+              className="absolute top-0 right-0 bottom-0 z-[70] w-full sm:max-w-md bg-zinc-900/95 backdrop-blur-2xl border-l border-white/10 flex flex-col"
             >
               {/* Drawer Header */}
               <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
@@ -422,6 +497,9 @@ function WatchPageInner() {
               <div className="flex-1 overflow-y-auto px-5 py-3 space-y-2 scrollbar-thin scrollbar-thumb-white/10">
                 {episodes.length > 0 ? episodes.map(ep => {
                   const isCurrentEpisode = ep.season_number === season && ep.episode_number === episode;
+                  const epKey = `${tmdbId}:${ep.season_number}:${ep.episode_number}`;
+                  const epEntry = watchEntries[epKey] || null;
+                  const isCompleted = epEntry && epEntry.progress >= 92;
                   return (
                     <button
                       key={ep.id}
@@ -461,12 +539,24 @@ function WatchPageInner() {
                               {ep.runtime}m
                             </div>
                           )}
+                          {/* Completion checkmark */}
+                          {isCompleted && (
+                            <div className="absolute top-1 right-1">
+                              <CheckCircle2 size={14} className="text-green-400 drop-shadow-lg" fill="rgba(0,0,0,0.4)" />
+                            </div>
+                          )}
+                          {/* Progress bar on episode */}
+                          {epEntry && epEntry.progress > 3 && epEntry.progress < 92 && (
+                            <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-white/10">
+                              <div className="h-full bg-gradient-to-r from-violet-500 to-cyan-400 rounded-r-full" style={{ width: `${epEntry.progress}%` }} />
+                            </div>
+                          )}
                         </div>
 
                         {/* Episode Info */}
                         <div className="flex-1 min-w-0 py-0.5">
                           <div className="flex items-center gap-2">
-                            <span className={`text-xs font-bold ${isCurrentEpisode ? 'text-violet-300' : 'text-white/40'}`}>
+                            <span className={`text-xs font-bold ${isCurrentEpisode ? 'text-violet-300' : isCompleted ? 'text-green-400/60' : 'text-white/40'}`}>
                               E{ep.episode_number}
                             </span>
                             {isCurrentEpisode && (
@@ -474,8 +564,13 @@ function WatchPageInner() {
                                 NOW PLAYING
                               </span>
                             )}
+                            {isCompleted && !isCurrentEpisode && (
+                              <span className="px-1.5 py-0.5 rounded bg-green-500/20 text-green-300 text-[9px] font-semibold">
+                                WATCHED
+                              </span>
+                            )}
                           </div>
-                          <p className={`text-sm font-medium truncate mt-0.5 ${isCurrentEpisode ? 'text-white' : 'text-white/80'}`}>
+                          <p className={`text-sm font-medium truncate mt-0.5 ${isCurrentEpisode ? 'text-white' : isCompleted ? 'text-white/50' : 'text-white/80'}`}>
                             {ep.name}
                           </p>
                           {ep.overview && (
@@ -513,18 +608,18 @@ function WatchPageInner() {
             transition={{ duration: 0.25 }}
             className="absolute bottom-0 left-0 right-0 z-50 bg-gradient-to-t from-black/90 via-black/50 to-transparent"
           >
-            <div className="flex items-center gap-3 p-4">
+            <div className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}>
               {/* Previous Episode */}
               <button
                 onClick={goPrev}
                 disabled={episode <= 1 && season <= 1}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white text-xs transition-all border border-white/5 disabled:opacity-20 disabled:cursor-not-allowed flex-shrink-0"
+                className="flex items-center gap-1 px-3 py-2.5 sm:py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white text-xs transition-all border border-white/5 disabled:opacity-20 disabled:cursor-not-allowed flex-shrink-0"
               >
-                <ArrowLeft size={12} /> Prev
+                <ArrowLeft size={14} /> <span className="hidden sm:inline">Prev</span>
               </button>
 
               {/* Episode quick-nav */}
-              <div className="flex-1 flex items-center gap-1 overflow-x-auto scrollbar-none">
+              <div className="flex-1 flex items-center gap-1.5 sm:gap-1 overflow-x-auto scrollbar-none">
                 <div className="flex items-center gap-1 text-white/40 text-xs flex-shrink-0 mr-1">
                   <Tv size={11} />
                   <span>S{season}</span>
@@ -536,7 +631,7 @@ function WatchPageInner() {
                   <button
                     key={ep}
                     onClick={() => goToEpisode(season, ep)}
-                    className={`flex-shrink-0 w-8 h-8 rounded-lg text-xs font-semibold transition-all ${
+                    className={`flex-shrink-0 w-9 h-9 sm:w-8 sm:h-8 rounded-lg text-xs font-semibold transition-all ${
                       ep === episode
                         ? 'bg-white text-black shadow-lg shadow-white/20'
                         : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white border border-white/5'
@@ -551,13 +646,26 @@ function WatchPageInner() {
               <button
                 onClick={goNext}
                 disabled={!hasNextEpisode && !hasNextSeason}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white text-xs transition-all border border-white/5 disabled:opacity-20 disabled:cursor-not-allowed flex-shrink-0"
+                className="flex items-center gap-1 px-3 py-2.5 sm:py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white text-xs transition-all border border-white/5 disabled:opacity-20 disabled:cursor-not-allowed flex-shrink-0"
               >
-                Next <ChevronRight size={12} />
+                <span className="hidden sm:inline">Next</span> <ChevronRight size={14} />
               </button>
             </div>
           </motion.div>
         </AnimatePresence>
+      )}
+
+      {/* ── Up Next Overlay ── */}
+      {mediaType === 'tv' && (hasNextEpisode || hasNextSeason) && (
+        <UpNextOverlay
+          visible={showUpNext}
+          title={displayTitle}
+          subtitle={hasNextEpisode ? `S${season} E${episode + 1}` : `S${season + 1} E1`}
+          posterUrl={titleInfo?.poster_path ? `${TMDB_IMAGE_BASE}/w185${titleInfo.poster_path}` : undefined}
+          onPlay={goNext}
+          onCancel={() => { setShowUpNext(false); setUpNextDismissed(true); }}
+          countdownSeconds={5}
+        />
       )}
 
       {/* ── Main Player ── */}

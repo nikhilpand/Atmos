@@ -70,9 +70,17 @@
   }
   html {
     @apply font-sans;
+    scroll-behavior: smooth;
   }
   body {
     @apply bg-background text-foreground antialiased;
+  }
+
+  /* Focus-visible accessibility */
+  :focus-visible {
+    outline: 2px solid #8b5cf6;
+    outline-offset: 2px;
+    border-radius: 4px;
   }
 
   /* Custom scrollbar */
@@ -137,4 +145,80 @@
   background: linear-gradient(90deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 100%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  Mobile Phone + TV Responsive                                      */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+/* Touch-friendly: Minimum 44px tap targets on mobile */
+@media (pointer: coarse) {
+  button, a, [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  /* Slightly larger scroll touch zones */
+  .scrollbar-none {
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+  }
+}
+
+/* Small phones (≤ 380px) — iPhone SE, Galaxy S21 */
+@media (max-width: 380px) {
+  .max-w-7xl { padding-left: 12px; padding-right: 12px; }
+  h1 { font-size: 1.75rem !important; }
+}
+
+/* Mobile phones (≤ 640px) */
+@media (max-width: 640px) {
+  /* Respect bottom safe area (notch phones) */
+  body { padding-bottom: env(safe-area-inset-bottom, 0); }
+  
+  /* Hero section mobile optimization */
+  section[class*="h-[70vh]"] {
+    height: 55vh !important;
+    max-height: 500px !important;
+  }
+  
+  /* Genre pill scroll: smaller gaps */
+  .scrollbar-none > a > div {
+    padding: 6px 12px;
+    font-size: 11px;
+  }
+}
+
+/* TV Screens (very large screens, 10-foot UI) */
+@media (min-width: 1920px) {
+  /* TV overscan safe area — 3% inset on all sides */
+  body {
+    padding: 0 3vw;
+  }
+  
+  /* Larger text for TV readability at distance */
+  .text-xs { font-size: 0.875rem; }
+  .text-sm { font-size: 1rem; }
+  .text-base { font-size: 1.125rem; }
+  
+  /* Bigger card posters for TV */
+  .skeleton-poster { min-width: 220px; }
+}
+
+/* Landscape phone (video player optimization) */
+@media (max-height: 500px) and (orientation: landscape) {
+  /* Hide non-essential UI in landscape player mode */
+  nav { display: none !important; }
+}
+
+/* Standalone PWA mode — hide browser chrome indicators */
+@media (display-mode: standalone) {
+  body { padding-top: env(safe-area-inset-top, 0); }
+}
+
+/* Reduce motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

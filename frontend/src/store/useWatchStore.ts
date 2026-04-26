@@ -103,6 +103,19 @@ export const useWatchStore = create<WatchState>()(
           },
         }));
 
+        // Evict oldest entries if store exceeds 500 items (prevent localStorage bloat on mobile)
+        const entries = get().entries;
+        const keys = Object.keys(entries);
+        if (keys.length > 500) {
+          const sorted = keys.sort((a, b) => entries[a].updatedAt - entries[b].updatedAt);
+          const toRemove = sorted.slice(0, keys.length - 400);
+          set((state) => {
+            const pruned = { ...state.entries };
+            toRemove.forEach(k => delete pruned[k]);
+            return { entries: pruned };
+          });
+        }
+
         // Supabase Background Sync
         const user = useAuthStore.getState().user;
         if (user && supabase) {

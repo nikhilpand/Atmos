@@ -60,16 +60,19 @@ export default function ContentRow({ title, items, seeAllHref, isLoading }: Cont
   if (items.length === 0) return null;
 
   return (
-    <div className="py-3 group/row">
+    <div className="py-4 group/row">
       {/* Row Header */}
       <div className="flex items-center justify-between mb-3 px-1">
-        <h2 className="text-white font-semibold text-base sm:text-lg tracking-tight">{title}</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-white font-bold text-base sm:text-lg tracking-tight">{title}</h2>
+          <div className="h-px w-8 bg-gradient-to-r from-white/15 to-transparent hidden sm:block" />
+        </div>
         {seeAllHref && (
           <a
             href={seeAllHref}
-            className="text-white/30 hover:text-white/60 text-xs font-medium transition-colors flex items-center gap-1"
+            className="text-white/30 hover:text-violet-400 text-xs font-medium transition-colors flex items-center gap-1 group/link"
           >
-            See All <ChevronRight size={12} />
+            See All <ChevronRight size={12} className="group-hover/link:translate-x-0.5 transition-transform" />
           </a>
         )}
       </div>
@@ -80,10 +83,12 @@ export default function ContentRow({ title, items, seeAllHref, isLoading }: Cont
         {canScrollLeft && (
           <button
             onClick={() => scroll('left')}
-            className="absolute left-0 top-0 bottom-0 z-30 w-10 flex items-center justify-center
-              bg-gradient-to-r from-black/80 to-transparent opacity-0 group-hover/row:opacity-100 transition-opacity duration-200"
+            className="absolute left-0 top-0 bottom-0 z-30 w-12 flex items-center justify-center
+              bg-gradient-to-r from-black/90 to-transparent opacity-0 group-hover/row:opacity-100 transition-opacity duration-200"
           >
-            <ChevronLeft size={24} className="text-white" />
+            <div className="w-8 h-8 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/10">
+              <ChevronLeft size={16} className="text-white" />
+            </div>
           </button>
         )}
 
@@ -91,10 +96,12 @@ export default function ContentRow({ title, items, seeAllHref, isLoading }: Cont
         {canScrollRight && (
           <button
             onClick={() => scroll('right')}
-            className="absolute right-0 top-0 bottom-0 z-30 w-10 flex items-center justify-center
-              bg-gradient-to-l from-black/80 to-transparent opacity-0 group-hover/row:opacity-100 transition-opacity duration-200"
+            className="absolute right-0 top-0 bottom-0 z-30 w-12 flex items-center justify-center
+              bg-gradient-to-l from-black/90 to-transparent opacity-0 group-hover/row:opacity-100 transition-opacity duration-200"
           >
-            <ChevronRight size={24} className="text-white" />
+            <div className="w-8 h-8 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/10">
+              <ChevronRight size={16} className="text-white" />
+            </div>
           </button>
         )}
 

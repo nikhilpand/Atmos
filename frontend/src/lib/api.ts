@@ -1,7 +1,15 @@
 // ─── ATMOS V4.0 — Centralized API Client ────────────────────────────
 // All backend calls go through this layer for consistency, caching, and retry
 
-import { META_URL, TMDB_IMAGE_BASE, TMDB_POSTER_SIZES, TMDB_BACKDROP_SIZES } from './constants';
+import { META_URL, TMDB_IMAGE_BASE, TMDB_POSTER_SIZES, TMDB_BACKDROP_SIZES, ALL_SERVERS, FEATURES } from './constants';
+import { registerServer, recordSuccess, recordFailure, getHealthiestServer } from './loadBalancer';
+
+// ─── Initialize Load Balancer ───────────────────────────────────────
+if (typeof window !== 'undefined' && FEATURES.ENABLE_LOAD_BALANCING) {
+  ALL_SERVERS.forEach(s => registerServer(s.url, s.role));
+  // Also register all as 'general' fallbacks
+  ALL_SERVERS.forEach(s => registerServer(s.url, 'general'));
+}
 
 // ─── Types ──────────────────────────────────────────────────────────
 export interface TMDBItem {
@@ -90,13 +98,20 @@ export function backdropUrl(path: string | null | undefined, size: keyof typeof 
 }
 
 // ─── Fetch with retry ───────────────────────────────────────────────
+// ─── Fetch with retry + load balancer telemetry ────────────────────
 async function fetchWithRetry(url: string, options?: RequestInit, retries = 1): Promise<Response> {
   for (let i = 0; i <= retries; i++) {
+    const start = Date.now();
     try {
       const res = await fetch(url, { ...options, next: { revalidate: 300 } });
-      if (res.ok) return res;
+      if (res.ok) {
+        // Track success for load balancer
+        try { const u = new URL(url); recordSuccess(u.origin, Date.now() - start); } catch { /* relative URL */ }
+        return res;
+      }
       if (i === retries) return res;
     } catch (err) {
+      try { const u = new URL(url); recordFailure(u.origin); } catch { /* relative URL */ }
       if (i === retries) throw err;
     }
   }
@@ -176,12 +191,13 @@ export async function fetchHomeRow(
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const variant = parts[0] === 'trending' ? 'trending' : parts[1];
     
+    // Use load-balanced meta server URL
+    const metaBase = (FEATURES.ENABLE_LOAD_BALANCING ? getHealthiestServer('meta') : null) || META_URL;
     let url: string;
     if (endpoint.startsWith('trending/')) {
-      url = `${META_URL}/trending?page=${page}&media_type=${mediaType}&time_window=${parts[2] || 'week'}`;
+      url = `${metaBase}/trending?page=${page}&media_type=${mediaType}&time_window=${parts[2] || 'week'}`;
     } else {
-      // popular, top_rated, now_playing — use trending endpoint with filters
-      url = `${META_URL}/trending?page=${page}&media_type=${mediaType}&time_window=week`;
+      url = `${metaBase}/trending?page=${page}&media_type=${mediaType}&time_window=week`;
     }
     
     const res = await fetchWithRetry(url);

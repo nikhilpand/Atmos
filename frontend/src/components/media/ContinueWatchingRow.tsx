@@ -1,47 +1,95 @@
 "use client";
 
 // ═══════════════════════════════════════════════════════════════════════
-// ATMOS V6 — Continue Watching Row
+// ATMOS V6 — Continue Watching Row (Premium Landscape Cards)
 // ═══════════════════════════════════════════════════════════════════════
-// Reads from Zustand watch store (localStorage-backed).
-// Shows progress bars on each card. Clicking resumes from exact position.
-// Items auto-remove when 92%+ completed.
 
-import React from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
-import { Play, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Play, X, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useWatchStore, type WatchEntry } from '@/store/useWatchStore';
 import { useShallow } from 'zustand/react/shallow';
 
 export default function ContinueWatchingRow() {
   const items = useWatchStore(useShallow(s => s.getContinueWatching()));
   const clearEntry = useWatchStore(s => s.clearEntry);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+
+  const updateScrollState = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 20);
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 20);
+  };
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', updateScrollState, { passive: true });
+    updateScrollState();
+    return () => el.removeEventListener('scroll', updateScrollState);
+  }, [items]);
+
+  const scroll = (direction: 'left' | 'right') => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollBy({ left: direction === 'left' ? -400 : 400, behavior: 'smooth' });
+  };
 
   if (items.length === 0) return null;
 
   return (
-    <section className="mb-8">
+    <section className="mb-6 group/row">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight">
-          Continue Watching
-        </h2>
-        <span className="text-xs text-white/30">{items.length} titles</span>
+        <div className="flex items-center gap-3">
+          <div className="w-1 h-6 rounded-full bg-gradient-to-b from-cyan-400 to-violet-500" />
+          <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight">
+            Continue Watching
+          </h2>
+          <span className="text-[10px] text-white/25 font-medium bg-white/5 px-2 py-0.5 rounded-full">{items.length}</span>
+        </div>
       </div>
 
-      <div className="flex gap-3 overflow-x-auto scrollbar-none pb-2">
-        {items.map((item) => (
-          <ContinueCard
-            key={`${item.tmdbId}:${item.season ?? ''}:${item.episode ?? ''}`}
-            item={item}
-            onRemove={() => {
-              const key = item.season !== undefined && item.episode !== undefined
-                ? `${item.tmdbId}:${item.season}:${item.episode}`
-                : item.tmdbId;
-              clearEntry(key);
-            }}
-          />
-        ))}
+      <div className="relative -mx-1">
+        {canScrollLeft && (
+          <button
+            onClick={() => scroll('left')}
+            className="absolute left-0 top-0 bottom-0 z-30 w-12 flex items-center justify-center bg-gradient-to-r from-black/90 to-transparent opacity-0 group-hover/row:opacity-100 transition-opacity"
+          >
+            <ChevronLeft size={20} className="text-white" />
+          </button>
+        )}
+        {canScrollRight && (
+          <button
+            onClick={() => scroll('right')}
+            className="absolute right-0 top-0 bottom-0 z-30 w-12 flex items-center justify-center bg-gradient-to-l from-black/90 to-transparent opacity-0 group-hover/row:opacity-100 transition-opacity"
+          >
+            <ChevronRight size={20} className="text-white" />
+          </button>
+        )}
+
+        <div
+          ref={scrollRef}
+          className="flex gap-3 overflow-x-auto scrollbar-none scroll-smooth px-1 pb-2"
+        >
+          <AnimatePresence>
+            {items.map((item) => (
+              <ContinueCard
+                key={`${item.tmdbId}:${item.season ?? ''}:${item.episode ?? ''}`}
+                item={item}
+                onRemove={() => {
+                  const key = item.season !== undefined && item.episode !== undefined
+                    ? `${item.tmdbId}:${item.season}:${item.episode}`
+                    : item.tmdbId;
+                  clearEntry(key);
+                }}
+              />
+            ))}
+          </AnimatePresence>
+        </div>
       </div>
     </section>
   );
@@ -54,69 +102,95 @@ function ContinueCard({ item, onRemove }: { item: WatchEntry; onRemove: () => vo
 
   const subtitle = item.mediaType === 'tv'
     ? `S${item.season} E${item.episode}`
-    : `${Math.round(item.currentTime / 60)}m watched`;
+    : '';
 
-  const posterUrl = item.posterPath
-    ? `https://image.tmdb.org/t/p/w342${item.posterPath}`
-    : null;
+  // Use backdrop for landscape cards
+  const bgUrl = item.backdropPath
+    ? `https://image.tmdb.org/t/p/w780${item.backdropPath}`
+    : item.posterPath
+      ? `https://image.tmdb.org/t/p/w342${item.posterPath}`
+      : null;
+
+  // Calculate time remaining
+  const timeRemaining = item.duration > 0
+    ? Math.round((item.duration - item.currentTime) / 60)
+    : 0;
 
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
+      layout
+      initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="relative flex-shrink-0 w-[140px] sm:w-[160px] group"
+      exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
+      className="relative flex-shrink-0 w-[280px] sm:w-[320px] group/card"
     >
       {/* Remove button */}
       <button
         onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(); }}
-        className="absolute -top-1.5 -right-1.5 z-20 w-5 h-5 rounded-full bg-black/70 border border-white/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/80"
+        className="absolute -top-1.5 -right-1.5 z-30 w-6 h-6 rounded-full bg-black/80 border border-white/10 flex items-center justify-center opacity-0 group-hover/card:opacity-100 transition-opacity hover:bg-red-500/80 hover:border-red-500/30"
         aria-label="Remove from continue watching"
       >
-        <X size={10} className="text-white" />
+        <X size={12} className="text-white" />
       </button>
 
       <Link href={watchUrl} className="block">
-        {/* Poster */}
-        <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-white/5 mb-2">
-          {posterUrl ? (
+        {/* Landscape Card */}
+        <div className="relative aspect-video rounded-xl overflow-hidden bg-white/5 border border-white/5 group-hover/card:border-violet-500/20 transition-all">
+          {bgUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={posterUrl}
+              src={bgUrl}
               alt={item.title}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              className="w-full h-full object-cover group-hover/card:scale-105 transition-transform duration-500"
               loading="lazy"
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-white/20 text-xs">
-              No Poster
-            </div>
+            <div className="w-full h-full shimmer" />
           )}
 
+          {/* Gradient overlay */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/40 to-transparent" />
+
           {/* Play overlay on hover */}
-          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-            <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-              <Play size={18} className="text-white ml-0.5" fill="white" />
+          <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/card:opacity-100 transition-opacity flex items-center justify-center">
+            <motion.div
+              whileHover={{ scale: 1.1 }}
+              className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-xl flex items-center justify-center border border-white/30 shadow-2xl"
+            >
+              <Play size={24} className="text-white ml-1" fill="white" />
+            </motion.div>
+          </div>
+
+          {/* Bottom info overlay */}
+          <div className="absolute bottom-0 left-0 right-0 p-3 z-10">
+            <h3 className="text-white font-semibold text-sm truncate leading-tight">{item.title}</h3>
+            <div className="flex items-center gap-2 mt-1">
+              {subtitle && (
+                <span className="text-violet-300/80 text-[11px] font-semibold">{subtitle}</span>
+              )}
+              {timeRemaining > 0 && (
+                <span className="flex items-center gap-1 text-white/40 text-[11px]">
+                  <Clock size={10} /> {timeRemaining}m left
+                </span>
+              )}
             </div>
           </div>
 
-          {/* Progress bar at bottom */}
-          <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10">
+          {/* Progress bar with gradient */}
+          <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-white/10 z-20">
             <motion.div
-              className="h-full bg-red-500 rounded-r-full"
+              className="h-full rounded-r-full"
+              style={{
+                background: 'linear-gradient(90deg, #8b5cf6, #06b6d4)',
+                width: `${Math.min(100, item.progress)}%`,
+              }}
               initial={{ width: 0 }}
               animate={{ width: `${Math.min(100, item.progress)}%` }}
-              transition={{ duration: 0.5, ease: 'easeOut' }}
+              transition={{ duration: 0.8, ease: 'easeOut' }}
             />
           </div>
         </div>
-
-        {/* Title + metadata */}
-        <p className="text-white/80 text-xs font-medium truncate leading-tight">
-          {item.title}
-        </p>
-        <p className="text-white/40 text-[10px] mt-0.5">
-          {subtitle} · {item.progress}%
-        </p>
       </Link>
     </motion.div>
   );

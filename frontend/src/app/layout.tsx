@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import Providers from "@/components/ui/Providers";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { CosmicBackground } from "@/components/generative/CosmicBackground";
 
-const inter = Inter({ subsets: ["latin"] });
+const jakarta = Plus_Jakarta_Sans({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700", "800"], display: "swap" });
 
 export const metadata: Metadata = {
   title: {
@@ -45,7 +45,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.className} min-h-screen bg-black text-white selection:bg-violet-500/30 overflow-x-hidden`}>
+      <head>
+        <link rel="manifest" href="/manifest.json" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <meta name="theme-color" content="#8b5cf6" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+      </head>
+      <body className={`${jakarta.className} min-h-screen bg-black text-white selection:bg-violet-500/30 overflow-x-hidden`}>
         <Providers>
           {/* Aceternity Cosmic Background */}
           <CosmicBackground />
