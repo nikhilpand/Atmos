@@ -112,7 +112,7 @@ export default function IframePlayer({
   // ── Fire-and-forget health report ──
   const reportHealth = useCallback((success: boolean) => {
     if (!tmdbId || !activeProviderId) return;
-    fetch(`${SUBS_URL}/provider-report`, {
+    fetch(`https://atmos-proxy.nkp9450732628.workers.dev/api/health`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

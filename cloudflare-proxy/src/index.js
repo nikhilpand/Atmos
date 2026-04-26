@@ -29,9 +29,128 @@ export default {
     if (destination) {
       return handleGenericProxy(request, destination);
     }
+    
+    // TMDB Edge Cache Proxy (e.g. /tmdb/3/movie/popular)
+    if (url.pathname.startsWith('/tmdb/')) {
+      return handleTmdbProxy(request, url, ctx);
+    }
+
+    // Health Aggregation API
+    if (url.pathname === '/api/health') {
+      return handleHealthApi(request, env);
+    }
+
     return handleVidlinkProxy(request, url);
   },
 };
+
+// In-memory cache for TMDB responses (lives as long as the worker isolate)
+const tmdbMemCache = new Map();
+
+async function handleTmdbProxy(request, url, ctx) {
+  const urlStr = url.toString();
+  
+  // Try in-memory cache first
+  if (tmdbMemCache.has(urlStr)) {
+    const cached = tmdbMemCache.get(urlStr);
+    if (Date.now() < cached.exp) {
+      const headers = new Headers(cached.headers);
+      headers.set('X-Atmos-Cache', 'HIT-MEM');
+      return new Response(cached.body, { status: 200, headers });
+    } else {
+      tmdbMemCache.delete(urlStr);
+    }
+  }
+
+  // Rewrite /tmdb/... to https://api.themoviedb.org/...
+  const tmdbPath = url.pathname.replace('/tmdb', '');
+  const tmdbUrl = `https://api.themoviedb.org${tmdbPath}${url.search}`;
+  
+  try {
+    const response = await fetch(tmdbUrl, {
+      headers: {
+        'Accept': 'application/json',
+        ...(request.headers.has('Authorization') ? { 'Authorization': request.headers.get('Authorization') } : {})
+      }
+    });
+
+    // Cache successful GET responses for 6 hours
+    if (response.status === 200 && request.method === 'GET') {
+      const bodyText = await response.clone().text();
+      tmdbMemCache.set(urlStr, {
+        body: bodyText,
+        headers: Object.fromEntries(response.headers.entries()),
+        exp: Date.now() + 21600 * 1000 // 6 hours
+      });
+      
+      // Keep cache size bounded (max 1000 items)
+      if (tmdbMemCache.size > 1000) {
+        const firstKey = tmdbMemCache.keys().next().value;
+        tmdbMemCache.delete(firstKey);
+      }
+    }
+
+    const headers = new Headers(response.headers);
+    headers.set('X-Atmos-Cache', 'MISS');
+    headers.set('Access-Control-Allow-Origin', '*');
+    headers.set('Cache-Control', 'public, max-age=21600'); // Tell browser to cache for 6 hours
+    
+    return new Response(response.body, { ...response, headers });
+  } catch (err) {
+    return new Response(JSON.stringify({ error: err.message }), {
+      status: 502,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
+}
+
+// Provider Health Tracker (lives as long as the worker isolate)
+const healthStats = new Map();
+
+async function handleHealthApi(request, env) {
+  // Handle POST: report health
+  if (request.method === 'POST') {
+    try {
+      const body = await request.json();
+      const { provider_id, success } = body;
+      
+      if (provider_id) {
+        if (!healthStats.has(provider_id)) {
+          healthStats.set(provider_id, { successes: 0, failures: 0, lastUpdate: Date.now() });
+        }
+        
+        const stats = healthStats.get(provider_id);
+        if (success) stats.successes++;
+        else stats.failures++;
+        stats.lastUpdate = Date.now();
+        
+        healthStats.set(provider_id, stats);
+      }
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      });
+    } catch {
+      return new Response('Bad Request', { status: 400 });
+    }
+  }
+
+  // Handle GET: retrieve health leaderboard
+  const providers = [];
+  for (const [id, stats] of healthStats.entries()) {
+    const total = stats.successes + stats.failures;
+    const reliability = total > 0 ? (stats.successes / total) * 100 : 100;
+    providers.push({
+      id,
+      reliability,
+      total_requests: total,
+      last_update: stats.lastUpdate
+    });
+  }
+
+  return new Response(JSON.stringify({ status: 'healthy', providers }), {
+    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+  });
+}
 
 async function handleGenericProxy(request, destination) {
   const headers = new Headers();

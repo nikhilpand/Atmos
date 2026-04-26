@@ -4,6 +4,8 @@ import "./globals.css";
 import Providers from "@/components/ui/Providers";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { CosmicBackground } from "@/components/generative/CosmicBackground";
+import Script from "next/script";
+import { PwaRegistry } from "@/components/ui/PwaRegistry";
 
 const jakarta = Plus_Jakarta_Sans({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700", "800"], display: "swap" });
 
@@ -53,6 +55,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
       <body className={`${jakarta.className} min-h-screen bg-black text-white selection:bg-violet-500/30 overflow-x-hidden`}>
+        <PwaRegistry />
         <Providers>
           {/* Aceternity Cosmic Background */}
           <CosmicBackground />

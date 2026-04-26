@@ -10,7 +10,7 @@ export const SUBS_URL = process.env.NEXT_PUBLIC_SUBS_URL || "https://nikhil1776-
 // ─── TMDB Configuration ────────────────────────────────────────────
 // Server-only: TMDB_API_KEY must NOT have NEXT_PUBLIC_ prefix in production.
 export const TMDB_API_KEY = process.env.TMDB_API_KEY || "";
-export const TMDB_BASE = "https://api.themoviedb.org/3";
+export const TMDB_BASE = "https://atmos-proxy.nkp9450732628.workers.dev/tmdb/3";
 export const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p";
 export const TMDB_POSTER_SIZES = {
   small: "w185",

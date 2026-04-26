@@ -10,7 +10,7 @@ import { META_URL } from '@/lib/constants';
 export const runtime = 'edge';
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY || process.env.NEXT_PUBLIC_TMDB_API_KEY || '';
-const TMDB_BASE = 'https://api.themoviedb.org/3';
+const TMDB_BASE = 'https://atmos-proxy.nkp9450732628.workers.dev/tmdb/3';
 
 // In-memory cache
 const titleCache = new Map<string, { data: any; timestamp: number }>();

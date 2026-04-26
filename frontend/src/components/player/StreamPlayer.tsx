@@ -13,11 +13,11 @@
 // If it fails or times out, we seamlessly fall back to iframe.
 // ═══════════════════════════════════════════════════════════════════════
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useCallback } from 'react';
 import { CONTROL_URL } from '@/lib/constants';
-import { extractStream, type ExtractedStream } from '@/lib/extractor';
 import IframePlayer from './IframePlayer';
 import NativePlayer from './NativePlayer';
+import { useStreamResolver } from '@/hooks/useStreamResolver';
 
 interface StreamPlayerProps {
   fileId?: string;
@@ -33,8 +33,6 @@ interface StreamPlayerProps {
   onNextEpisode?: () => void;
 }
 
-type PlayerMode = 'loading' | 'native' | 'iframe';
-
 export default function StreamPlayer({
   fileId,
   fileName,
@@ -48,11 +46,6 @@ export default function StreamPlayer({
   episode,
   onNextEpisode,
 }: StreamPlayerProps) {
-  const [mode, setMode] = useState<PlayerMode>('loading');
-  const [extractedStream, setExtractedStream] = useState<ExtractedStream | null>(null);
-  const [extractionFailed, setExtractionFailed] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
-
   // ─── Tier 0: GDrive direct stream (instant) ──────────────────────
   if (fileId) {
     const streamUrl = `${CONTROL_URL}/api/stream/${fileId}`;
@@ -69,85 +62,28 @@ export default function StreamPlayer({
     );
   }
 
-  // ─── Tier 1: Attempt native extraction ────────────────────────────
-  // We use a parallel strategy: start extraction immediately, but
-  // if it takes > 3s, show the iframe player while extraction continues.
-  // If extraction succeeds later, the user can switch to native.
-
+  // ─── Tier 1 & 2: Native vs Iframe Race ────────────────────────────
   // eslint-disable-next-line react-hooks/rules-of-hooks
-  useEffect(() => {
-    if (!tmdbId || extractionFailed) {
-      setMode('iframe');
-      return;
-    }
+  const { stream, fallbackToIframe, forceFallback } = useStreamResolver({
+    tmdbId,
+    mediaType,
+    season,
+    episode,
+    timeoutMs: 4000
+  });
 
-    // Cancel previous extraction
-    if (abortRef.current) abortRef.current.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    setMode('loading');
-    setExtractedStream(null);
-
-    let iframeTimer: NodeJS.Timeout;
-
-    // After 4s, show iframe as fallback (extraction continues in background)
-    iframeTimer = setTimeout(() => {
-      if (!controller.signal.aborted) {
-        setMode(prev => prev === 'loading' ? 'iframe' : prev);
-      }
-    }, 4000);
-
-    // Run extraction
-    extractStream(tmdbId, mediaType || 'movie', season, episode, controller.signal)
-      .then(result => {
-        if (controller.signal.aborted) return;
-        clearTimeout(iframeTimer);
-
-        if (result.success && result.stream) {
-          setExtractedStream(result.stream);
-          setMode('native');
-        } else {
-          console.warn('[StreamPlayer] Extraction failed:', result.error);
-          setExtractionFailed(true);
-          setMode('iframe');
-        }
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) {
-          setExtractionFailed(true);
-          setMode('iframe');
-        }
-      });
-
-    return () => {
-      controller.abort();
-      clearTimeout(iframeTimer);
-    };
-  }, [tmdbId, mediaType, season, episode, extractionFailed]);
-
-  // ── Handle native player failure → fallback to iframe ──
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const handleNativeFallback = useCallback(() => {
-    console.warn('[StreamPlayer] Native player failed, switching to iframe');
-    setExtractionFailed(true);
-    setMode('iframe');
-  }, []);
-
-  // ─── Render based on mode ─────────────────────────────────────────
-
-  // Native mode
-  if (mode === 'native' && extractedStream) {
+  // Native mode (stream found and no forced fallback)
+  if (stream && !fallbackToIframe) {
     return (
       <NativePlayer
-        stream={extractedStream}
+        stream={stream}
         title={fileName}
         tmdbId={tmdbId}
         mediaType={mediaType}
         season={season}
         episode={episode}
         onNextEpisode={onNextEpisode}
-        onFallback={handleNativeFallback}
+        onFallback={forceFallback}
       />
     );
   }

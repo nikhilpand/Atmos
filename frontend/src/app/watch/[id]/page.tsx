@@ -10,9 +10,11 @@ import StreamPlayer from '@/components/player/StreamPlayer';
 import ProviderSelector from '@/components/player/ProviderSelector';
 import UpNextOverlay from '@/components/player/UpNextOverlay';
 import { resolveStream, fetchTitle, type Episode } from '@/lib/api';
-import { DEFAULT_PROVIDERS, buildProviderUrl, type Provider } from '@/lib/providers';
+import { TMDB_IMAGE_BASE, TMDB_BACKDROP_SIZES, CONTROL_URL, META_URL } from '@/lib/constants';
 import { useWatchStore } from '@/store/useWatchStore';
-import { TMDB_IMAGE_BASE } from '@/lib/constants';
+import { usePrefetchNextEpisode } from '@/hooks/usePrefetchNextEpisode';
+import { extractStream } from '@/lib/extractor';
+import { DEFAULT_PROVIDERS, buildProviderUrl, type Provider } from '@/lib/providers';
 
 // ─── Watch Page Inner (needs Suspense for useSearchParams) ──────────
 function WatchPageInner() {
@@ -143,6 +145,15 @@ function WatchPageInner() {
   const currentSeasonData = validSeasons.find((s: any) => s.season_number === season);
   const hasNextEpisode = currentSeasonData ? episode < currentSeasonData.episode_count : false;
   const hasNextSeason = validSeasons.some((s: any) => s.season_number === season + 1);
+
+  // ── Smart Prefetching (Phase 3) ──
+  usePrefetchNextEpisode({
+    tmdbId,
+    mediaType,
+    season,
+    currentEpisode: episode,
+    enabled: hasNextEpisode && mediaType === 'tv'
+  });
 
   // ── Track watch progress → Zustand store (for Continue Watching) ──
   const updateProgress = useWatchStore(s => s.updateProgress);
