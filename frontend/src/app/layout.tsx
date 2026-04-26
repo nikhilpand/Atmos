@@ -6,6 +6,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import { CosmicBackground } from "@/components/generative/CosmicBackground";
 import Script from "next/script";
 import { PwaRegistry } from "@/components/ui/PwaRegistry";
+import ToastProvider from "@/components/ui/ToastProvider";
 
 const jakarta = Plus_Jakarta_Sans({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700", "800"], display: "swap" });
 
@@ -64,6 +65,7 @@ export default function RootLayout({
           <main className="relative z-10">
             {children}
           </main>
+          <ToastProvider />
         </Providers>
         <SpeedInsights />
       </body>

@@ -67,9 +67,16 @@ export default function TitleHero({ detail, mediaType, isInWatchlist, onToggleWa
             {/* Meta Row */}
             <div className="flex flex-wrap items-center gap-3 mb-4 text-sm text-white/60">
               {rating && rating > 0 && (
-                <span className="flex items-center gap-1 text-amber-400 font-semibold">
+                <span className="flex items-center gap-1.5 text-amber-400 font-semibold">
                   <Star size={14} fill="currentColor" />
                   {rating.toFixed(1)}
+                  <span className="relative w-14 h-1.5 rounded-full bg-white/10 overflow-hidden ml-1">
+                    <span
+                      className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-amber-400 to-amber-500"
+                      style={{ width: `${(rating / 10) * 100}%` }}
+                    />
+                  </span>
+                  <span className="text-white/30 text-xs">{Math.round(rating * 10)}%</span>
                 </span>
               )}
               {year && (
@@ -102,16 +109,17 @@ export default function TitleHero({ detail, mediaType, isInWatchlist, onToggleWa
               )}
             </div>
 
-            {/* Genre Pills */}
+            {/* Genre Pills — clickable */}
             {genres.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-5">
                 {genres.slice(0, 5).map(g => (
-                  <span
+                  <Link
                     key={g.id}
-                    className="px-3 py-1 rounded-full text-xs font-medium text-white/60 bg-white/5 border border-white/10"
+                    href={`/genre/${g.id}?name=${encodeURIComponent(g.name)}`}
+                    className="px-3 py-1 rounded-full text-xs font-medium text-white/60 bg-white/5 border border-white/10 hover:bg-violet-500/20 hover:text-violet-300 hover:border-violet-500/30 transition-all duration-200"
                   >
                     {g.name}
-                  </span>
+                  </Link>
                 ))}
               </div>
             )}

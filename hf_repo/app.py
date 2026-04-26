@@ -48,7 +48,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse as StarletteJSON
 
 import telegram_bot
-from routers import auth, files, admin_drive, admin_queue, admin_system, admin_content, discover, websocket
+from routers import auth, files, admin_drive, admin_queue, admin_system, admin_content, discover, websocket, progress
 
 # Share log_queue with admin_system router
 admin_system.log_queue = log_queue
@@ -113,6 +113,21 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
 fastapi_app.add_middleware(RateLimitMiddleware)
 
+
+# ─── Security Headers ───────────────────────────────────────────
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        return response
+
+
+fastapi_app.add_middleware(SecurityHeadersMiddleware)
+
 # ─── Mount Downloader ────────────────────────────────────────────
 try:
     from downloader_server import app as downloader_app
@@ -130,6 +145,7 @@ fastapi_app.include_router(admin_system.router, prefix="/api/admin", tags=["admi
 fastapi_app.include_router(admin_content.router, prefix="/api/admin", tags=["admin:content"])
 fastapi_app.include_router(discover.router, prefix="/api", tags=["discover"])
 fastapi_app.include_router(websocket.router, tags=["ws"])
+fastapi_app.include_router(progress.router, prefix="/api", tags=["progress"])
 
 
 # ─── Root Redirects ──────────────────────────────────────────────

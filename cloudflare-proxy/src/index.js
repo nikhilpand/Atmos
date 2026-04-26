@@ -8,6 +8,21 @@ const HEADER_MAP = {
 
 const STRIP_HEADERS = ['content-encoding', 'content-length', 'transfer-encoding'];
 
+// ─── Security Headers (applied to ALL responses) ───────────────
+function addSecurityHeaders(response) {
+  const headers = new Headers(response.headers);
+  headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  headers.set('X-Content-Type-Options', 'nosniff');
+  headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  headers.set('X-XSS-Protection', '1; mode=block');
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -25,22 +40,44 @@ export default {
       });
     }
 
+    // HLS segment edge caching (.m3u8 and .ts files)
+    if (url.pathname.match(/\.(m3u8|ts)$/i)) {
+      const cacheKey = new Request(url.toString(), request);
+      const cache = caches.default;
+      let cachedResponse = await cache.match(cacheKey);
+      if (cachedResponse) {
+        const headers = new Headers(cachedResponse.headers);
+        headers.set('X-Atmos-Cache', 'HIT-EDGE');
+        return addSecurityHeaders(new Response(cachedResponse.body, { ...cachedResponse, headers }));
+      }
+    }
+
     const destination = url.searchParams.get('destination');
     if (destination) {
-      return handleGenericProxy(request, destination);
+      return addSecurityHeaders(await handleGenericProxy(request, destination));
     }
     
     // TMDB Edge Cache Proxy (e.g. /tmdb/3/movie/popular)
     if (url.pathname.startsWith('/tmdb/')) {
-      return handleTmdbProxy(request, url, ctx);
+      return addSecurityHeaders(await handleTmdbProxy(request, url, ctx));
     }
 
     // Health Aggregation API
     if (url.pathname === '/api/health') {
-      return handleHealthApi(request, env);
+      return addSecurityHeaders(await handleHealthApi(request, env));
     }
 
-    return handleVidlinkProxy(request, url);
+    const response = await handleVidlinkProxy(request, url);
+
+    // Cache HLS segments at the edge for 1 hour
+    if (url.pathname.match(/\.(m3u8|ts)$/i) && response.status === 200) {
+      const toCache = response.clone();
+      const cacheHeaders = new Headers(toCache.headers);
+      cacheHeaders.set('Cache-Control', 'public, max-age=3600');
+      ctx.waitUntil(caches.default.put(new Request(url.toString(), request), new Response(toCache.body, { headers: cacheHeaders })));
+    }
+
+    return addSecurityHeaders(response);
   },
 };
 

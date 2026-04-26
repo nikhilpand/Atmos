@@ -1,21 +1,23 @@
 "use client";
 
 // ═══════════════════════════════════════════════════════════════════════
-// ATMOS V2.0 — Native Video Player (hls.js + Custom Controls)
+// ATMOS V9.0 — Native Video Player (hls.js + Custom Controls)
 // ═══════════════════════════════════════════════════════════════════════
-// Plays raw m3u8/mp4 streams with a premium dark UI.
-// Features: download button, precise watch tracking, quality selector,
-// and full keyboard controls.
+// Premium dark UI with: volume memory, playback speed, PiP, buffer
+// spinner, mobile double-tap seek, landscape lock, error retry,
+// download, quality selector, keyboard controls, watch tracking.
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Play, Pause, Volume2, VolumeX, Maximize, Minimize,
-  Download, Loader2, AlertTriangle, SkipForward,
-  Settings, ChevronRight,
+  Play, Pause, Volume2, Volume1, VolumeX, Maximize, Minimize,
+  Download, Loader2, AlertTriangle, SkipForward, RefreshCw,
+  Settings, ChevronRight, PictureInPicture2, Gauge,
 } from 'lucide-react';
 import type { ExtractedStream } from '@/lib/extractor';
 import { getDownloadUrl } from '@/lib/extractor';
+
+const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 interface NativePlayerProps {
   stream: ExtractedStream;
@@ -52,12 +54,32 @@ export default function NativePlayer({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [buffered, setBuffered] = useState(0);
-  const [volume, setVolume] = useState(1);
+  const [volume, setVolume] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return parseFloat(localStorage.getItem('atmos-volume') ?? '1');
+    }
+    return 1;
+  });
   const [isLoading, setIsLoading] = useState(true);
+  const [isBuffering, setIsBuffering] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [canRetry, setCanRetry] = useState(false);
   const [showQuality, setShowQuality] = useState(false);
+  const [showSpeedMenu, setShowSpeedMenu] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return parseFloat(localStorage.getItem('atmos-speed') ?? '1');
+    }
+    return 1;
+  });
   const [selectedQuality, setSelectedQuality] = useState(stream.quality || 'auto');
   const [isDownloading, setIsDownloading] = useState(false);
+  const [showVolumeSlider, setShowVolumeSlider] = useState(false);
+
+  // Mobile double-tap state
+  const [doubleTapSide, setDoubleTapSide] = useState<'left' | 'right' | null>(null);
+  const tapTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const tapCountRef = useRef(0);
 
   // ── Initialize HLS or direct source ────────────────────────────────
   useEffect(() => {
@@ -95,6 +117,8 @@ export default function NativePlayer({
             hls.on(Hls.Events.MANIFEST_PARSED, () => {
               if (!destroyed) {
                 setIsLoading(false);
+                video.volume = parseFloat(localStorage.getItem('atmos-volume') ?? '1');
+                video.playbackRate = parseFloat(localStorage.getItem('atmos-speed') ?? '1');
                 video.play().catch(() => { /* autoplay blocked */ });
               }
             });
@@ -103,11 +127,12 @@ export default function NativePlayer({
               if (data.fatal) {
                 console.error('[NativePlayer] Fatal HLS error:', data.type, data.details);
                 if (data.type === 'networkError') {
-                  // Try to recover once
                   hls.startLoad();
+                } else if (data.type === 'mediaError') {
+                  hls.recoverMediaError();
                 } else {
                   setError(`Playback error: ${data.details}`);
-                  onFallback?.();
+                  setCanRetry(true);
                 }
               }
             });
@@ -150,17 +175,24 @@ export default function NativePlayer({
           }
         });
 
-        // Stall detection — if video stalls for 10s, offer fallback
+        // Buffer spinner + stall detection
         let stallTimer: NodeJS.Timeout;
         video.addEventListener('waiting', () => {
+          if (!destroyed) setIsBuffering(true);
           stallTimer = setTimeout(() => {
             if (!destroyed && video.readyState < 3) {
               setError('Stream is buffering too slowly');
-              onFallback?.();
+              setCanRetry(true);
             }
           }, 15_000);
         });
-        video.addEventListener('playing', () => clearTimeout(stallTimer));
+        video.addEventListener('playing', () => {
+          clearTimeout(stallTimer);
+          if (!destroyed) setIsBuffering(false);
+        });
+        video.addEventListener('canplay', () => {
+          if (!destroyed) setIsBuffering(false);
+        });
       } catch (err) {
         console.error('[NativePlayer] Init error:', err);
         setError('Failed to initialize player');
@@ -309,6 +341,9 @@ export default function NativePlayer({
     if (!video) return;
     video.muted = !video.muted;
     setIsMuted(video.muted);
+    if (!video.muted) {
+      video.volume = volume || 1;
+    }
   };
 
   const toggleFullscreen = () => {
@@ -318,11 +353,90 @@ export default function NativePlayer({
     if (document.fullscreenElement) {
       document.exitFullscreen();
       setIsFullscreen(false);
+      try { screen.orientation.unlock(); } catch {}
     } else {
       container.requestFullscreen().catch(() => {});
       setIsFullscreen(true);
+      try { (screen.orientation as any).lock('landscape').catch(() => {}); } catch {}
     }
   };
+
+  const togglePiP = async () => {
+    const video = videoRef.current;
+    if (!video) return;
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else {
+        await video.requestPictureInPicture();
+      }
+    } catch {}
+  };
+
+  const changeSpeed = (speed: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.playbackRate = speed;
+    setPlaybackSpeed(speed);
+    localStorage.setItem('atmos-speed', String(speed));
+    setShowSpeedMenu(false);
+  };
+
+  const handleVolumeChange = (newVol: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.volume = newVol;
+    setVolume(newVol);
+    setIsMuted(newVol === 0);
+    video.muted = newVol === 0;
+    localStorage.setItem('atmos-volume', String(newVol));
+  };
+
+  const handleRetry = () => {
+    setError(null);
+    setCanRetry(false);
+    const hls = hlsRef.current;
+    if (hls) {
+      hls.startLoad();
+      hls.recoverMediaError();
+    }
+    videoRef.current?.play().catch(() => {});
+  };
+
+  // Mobile double-tap seek
+  const handleTouchTap = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    const container = containerRef.current;
+    if (!container || !videoRef.current) return;
+    const rect = container.getBoundingClientRect();
+    const x = e.changedTouches[0].clientX - rect.left;
+    const side = x < rect.width / 2 ? 'left' : 'right';
+
+    tapCountRef.current += 1;
+    if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+
+    tapTimerRef.current = setTimeout(() => {
+      if (tapCountRef.current === 1) {
+        // Single tap — toggle controls
+        setShowControls(prev => !prev);
+      }
+      tapCountRef.current = 0;
+    }, 250);
+
+    if (tapCountRef.current === 2) {
+      // Double tap — seek ±10s
+      if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+      tapCountRef.current = 0;
+      const video = videoRef.current;
+      if (side === 'right') {
+        video.currentTime = Math.min(video.duration, video.currentTime + 10);
+      } else {
+        video.currentTime = Math.max(0, video.currentTime - 10);
+      }
+      setDoubleTapSide(side);
+      setTimeout(() => setDoubleTapSide(null), 600);
+      resetControlsTimer();
+    }
+  }, [resetControlsTimer]);
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
     const video = videoRef.current;
@@ -390,9 +504,24 @@ export default function NativePlayer({
       <div className="w-full h-full flex items-center justify-center bg-black">
         <div className="text-center">
           <AlertTriangle size={48} className="text-amber-400 mx-auto mb-4" />
-          <p className="text-white/70 text-lg font-medium">Native Player Error</p>
+          <p className="text-white/70 text-lg font-medium">Playback Error</p>
           <p className="text-white/40 text-sm mt-1 max-w-sm mx-auto">{error}</p>
-          <p className="text-white/30 text-xs mt-3">Switching to fallback player...</p>
+          <div className="flex gap-3 justify-center mt-5">
+            {canRetry && (
+              <button
+                onClick={handleRetry}
+                className="flex items-center gap-2 px-5 py-2.5 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-full transition-all"
+              >
+                <RefreshCw size={14} /> Retry
+              </button>
+            )}
+            <button
+              onClick={() => onFallback?.()}
+              className="flex items-center gap-2 px-5 py-2.5 bg-white/10 hover:bg-white/15 text-white/70 text-sm rounded-full transition-all"
+            >
+              Switch Player
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -403,7 +532,7 @@ export default function NativePlayer({
       ref={containerRef}
       className="relative w-full h-full bg-black group"
       onMouseMove={resetControlsTimer}
-      onTouchStart={resetControlsTimer}
+      onTouchEnd={handleTouchTap}
     >
       {/* Video element */}
       <video
@@ -412,6 +541,39 @@ export default function NativePlayer({
         playsInline
         onClick={togglePlay}
       />
+
+      {/* Double-tap seek ripple */}
+      <AnimatePresence>
+        {doubleTapSide && (
+          <motion.div
+            initial={{ opacity: 0.7, scale: 0.5 }}
+            animate={{ opacity: 0, scale: 1.5 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.5 }}
+            className={`absolute top-1/2 -translate-y-1/2 w-24 h-24 rounded-full bg-white/20 pointer-events-none z-40 flex items-center justify-center ${
+              doubleTapSide === 'left' ? 'left-[15%]' : 'right-[15%]'
+            }`}
+          >
+            <span className="text-white font-bold text-sm">
+              {doubleTapSide === 'left' ? '−10s' : '+10s'}
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Buffering spinner */}
+      <AnimatePresence>
+        {isBuffering && !isLoading && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 flex items-center justify-center z-15 pointer-events-none"
+          >
+            <Loader2 size={40} className="text-white/70 animate-spin" />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Loading spinner */}
       <AnimatePresence>
@@ -497,10 +659,26 @@ export default function NativePlayer({
                   </button>
                 )}
 
-                {/* Volume */}
-                <button onClick={toggleMute} className="text-white/60 hover:text-white transition-colors">
-                  {isMuted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
-                </button>
+                {/* Volume with slider */}
+                <div className="relative flex items-center gap-1"
+                  onMouseEnter={() => setShowVolumeSlider(true)}
+                  onMouseLeave={() => setShowVolumeSlider(false)}
+                >
+                  <button onClick={toggleMute} className="text-white/60 hover:text-white transition-colors">
+                    {isMuted || volume === 0 ? <VolumeX size={18} /> : volume < 0.5 ? <Volume1 size={18} /> : <Volume2 size={18} />}
+                  </button>
+                  {showVolumeSlider && (
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={isMuted ? 0 : volume}
+                      onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                      className="w-20 h-1 accent-violet-500 cursor-pointer"
+                    />
+                  )}
+                </div>
 
                 {/* Time */}
                 <span className="text-white/50 text-xs font-mono">
@@ -545,6 +723,49 @@ export default function NativePlayer({
                       )}
                     </AnimatePresence>
                   </div>
+                )}
+
+                {/* Playback Speed */}
+                <div className="relative">
+                  <button
+                    onClick={() => { setShowSpeedMenu(!showSpeedMenu); setShowQuality(false); }}
+                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-white/60 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-all"
+                  >
+                    <Gauge size={12} />
+                    {playbackSpeed === 1 ? '1×' : `${playbackSpeed}×`}
+                  </button>
+                  <AnimatePresence>
+                    {showSpeedMenu && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 5 }}
+                        className="absolute bottom-full right-0 mb-2 bg-zinc-900/95 border border-white/10 rounded-xl overflow-hidden min-w-[100px] backdrop-blur-xl"
+                      >
+                        {SPEED_OPTIONS.map(s => (
+                          <button
+                            key={s}
+                            onClick={() => changeSpeed(s)}
+                            className={`w-full text-left px-4 py-2 text-xs transition-all flex items-center justify-between ${
+                              playbackSpeed === s
+                                ? 'text-violet-300 bg-violet-500/10'
+                                : 'text-white/60 hover:text-white hover:bg-white/5'
+                            }`}
+                          >
+                            {s === 1 ? 'Normal' : `${s}×`}
+                            {playbackSpeed === s && <ChevronRight size={10} />}
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* Picture-in-Picture */}
+                {'pictureInPictureEnabled' in document && (
+                  <button onClick={togglePiP} className="text-white/60 hover:text-white transition-colors" title="Picture in Picture">
+                    <PictureInPicture2 size={18} />
+                  </button>
                 )}
 
                 {/* Download */}
