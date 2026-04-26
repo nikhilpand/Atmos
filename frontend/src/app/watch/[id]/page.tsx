@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import StreamPlayer from '@/components/player/StreamPlayer';
 import ProviderSelector from '@/components/player/ProviderSelector';
 import UpNextOverlay from '@/components/player/UpNextOverlay';
-import { resolveStream, fetchTitle, type Episode } from '@/lib/api';
+import { fetchTitle, type Episode } from '@/lib/api';
 import { TMDB_IMAGE_BASE, TMDB_BACKDROP_SIZES, CONTROL_URL, META_URL } from '@/lib/constants';
 import { useWatchStore } from '@/store/useWatchStore';
 import { usePrefetchNextEpisode } from '@/hooks/usePrefetchNextEpisode';
@@ -38,24 +38,14 @@ function WatchPageInner() {
   const [showEpisodes, setShowEpisodes] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [selectedSeason, setSelectedSeason] = useState(season);
-  const [usingStaticFallback, setUsingStaticFallback] = useState(false);
   const [showUpNext, setShowUpNext] = useState(false);
   const [upNextDismissed, setUpNextDismissed] = useState(false);
 
   // ═══════════════════════════════════════════════════════════════════
-  // PARALLEL DATA FETCHING — All 3 fire simultaneously, no waterfall
+  // PARALLEL DATA FETCHING
   // ═══════════════════════════════════════════════════════════════════
 
-  // ── 1. Resolve stream providers IMMEDIATELY (no waiting for category) ──
-  // The server does its own TMDB fetch in parallel for classification.
-  const { data: streamData, isLoading: isResolving } = useQuery({
-    queryKey: ['resolve', tmdbId, mediaType, season, episode],
-    queryFn: () => resolveStream(tmdbId, mediaType, season, episode),
-    enabled: !!tmdbId && !fileId,
-    staleTime: 12 * 60 * 60 * 1000,
-  });
-
-  // ── 2. Fetch title metadata (parallel with resolve) ──
+  // ── 1. Fetch title metadata ──
   const { data: titleData } = useQuery({
     queryKey: ['title', tmdbId, mediaType],
     queryFn: () => fetchTitle(tmdbId, mediaType, titleHint),
@@ -63,7 +53,7 @@ function WatchPageInner() {
     staleTime: 24 * 60 * 60 * 1000,
   });
 
-  // ── 3. Fetch episodes for TV (parallel with everything) ──
+  // ── 2. Fetch episodes for TV ──
   const { data: episodesData } = useQuery({
     queryKey: ['episodes', tmdbId, selectedSeason],
     queryFn: async () => {
@@ -75,53 +65,19 @@ function WatchPageInner() {
     staleTime: 60 * 60 * 1000,
   });
 
-  // ── 4. Pre-resolve NEXT episode while current one plays (TV only) ──
-  useQuery({
-    queryKey: ['resolve', tmdbId, mediaType, season, episode + 1],
-    queryFn: () => resolveStream(tmdbId, mediaType, season, episode + 1),
-    enabled: mediaType === 'tv' && !!tmdbId && !fileId && !!streamData,
-    staleTime: 12 * 60 * 60 * 1000,
-  });
-
   // ═══════════════════════════════════════════════════════════════════
-  // 500ms STATIC FALLBACK — Start iframe instantly if API is slow
+  // DERIVED STATE
   // ═══════════════════════════════════════════════════════════════════
-  const staticFallbackProviders = useMemo(() => {
+  // In V8, we instantly load default providers for the iframe fallback
+  const providers = useMemo(() => {
     if (!tmdbId || fileId) return [];
-    return DEFAULT_PROVIDERS.slice(0, 3).map((p: Provider) => ({
+    return DEFAULT_PROVIDERS.filter(p => p.enabled).map((p: Provider) => ({
       id: p.id,
       name: p.name,
       url: buildProviderUrl(p, tmdbId, mediaType as 'movie' | 'tv', season, episode),
       priority: p.priority,
     }));
   }, [tmdbId, mediaType, season, episode, fileId]);
-
-  // Use static fallback if resolve hasn't returned within 500ms
-  useEffect(() => {
-    if (streamData || fileId) return;
-    const timer = setTimeout(() => {
-      if (!streamData && staticFallbackProviders.length > 0) {
-        setUsingStaticFallback(true);
-      }
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [streamData, staticFallbackProviders, fileId]);
-
-  // Clear static fallback once real data arrives
-  useEffect(() => {
-    if (streamData && usingStaticFallback) {
-      setUsingStaticFallback(false);
-    }
-  }, [streamData, usingStaticFallback]);
-
-  // ═══════════════════════════════════════════════════════════════════
-  // DERIVED STATE
-  // ═══════════════════════════════════════════════════════════════════
-  const providers = useMemo(() => {
-    if (streamData?.providers?.length) return streamData.providers;
-    if (usingStaticFallback) return staticFallbackProviders;
-    return [];
-  }, [streamData?.providers, usingStaticFallback, staticFallbackProviders]);
 
   const titleInfo = titleData?.detail;
   const seasons = useMemo(() => titleData?.seasons || [], [titleData?.seasons]);
@@ -182,7 +138,6 @@ function WatchPageInner() {
         currentTime: detail.currentTime,
         duration: detail.duration,
         genreIds: titleInfo?.genres?.map((g: { id: number }) => g.id) || [],
-        category: (streamData as unknown as Record<string, unknown>)?.category as string || undefined,
       });
 
       // Trigger Up Next overlay at 92% for TV shows
@@ -193,7 +148,7 @@ function WatchPageInner() {
 
     window.addEventListener('atmos:progress', handleProgress);
     return () => window.removeEventListener('atmos:progress', handleProgress);
-  }, [tmdbId, mediaType, season, episode, displayTitle, titleInfo, streamData, updateProgress, upNextDismissed, hasNextEpisode, hasNextSeason]);
+  }, [tmdbId, mediaType, season, episode, displayTitle, titleInfo, updateProgress, upNextDismissed, hasNextEpisode, hasNextSeason]);
 
   // ── Dynamic page title ──
   useEffect(() => {
@@ -684,20 +639,6 @@ function WatchPageInner() {
         {/* GDrive direct streaming mode */}
         {fileId ? (
           <StreamPlayer fileId={fileId} fileName={fileNameParam} />
-        ) : isResolving ? (
-          <div className="w-full h-full flex items-center justify-center">
-            <div className="flex flex-col items-center gap-5">
-              <div className="relative w-20 h-20">
-                <div className="absolute inset-0 rounded-full border-2 border-white/5" />
-                <div className="absolute inset-0 rounded-full border-2 border-t-violet-500 animate-spin" />
-                <div className="absolute inset-2 rounded-full border-2 border-t-cyan-400/60 animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }} />
-              </div>
-              <div className="text-center">
-                <p className="text-white/70 text-sm font-medium">Finding best servers...</p>
-                <p className="text-white/30 text-xs mt-1">Racing {providers.length || '10+'} providers</p>
-              </div>
-            </div>
-          </div>
         ) : providers.length > 0 ? (
           <StreamPlayer
             providers={providers}

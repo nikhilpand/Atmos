@@ -64,7 +64,7 @@ export default function StreamPlayer({
 
   // ─── Tier 1 & 2: Native vs Iframe Race ────────────────────────────
   // eslint-disable-next-line react-hooks/rules-of-hooks
-  const { stream, fallbackToIframe, forceFallback } = useStreamResolver({
+  const { stream, isResolving, fallbackToIframe, forceFallback } = useStreamResolver({
     tmdbId,
     mediaType,
     season,
@@ -88,7 +88,25 @@ export default function StreamPlayer({
     );
   }
 
-  // Iframe fallback or loading (iframe shows loading state internally)
+  // Loading state (racing native extraction vs 4s timeout)
+  if (isResolving && !fallbackToIframe) {
+    return (
+      <div className="w-full h-full bg-black flex items-center justify-center">
+        <div className="flex flex-col items-center gap-5">
+          <div className="relative w-16 h-16">
+            <div className="absolute inset-0 rounded-full border-2 border-white/5" />
+            <div className="absolute inset-0 rounded-full border-2 border-t-violet-500 animate-spin" />
+            <div className="absolute inset-2 rounded-full border-2 border-t-cyan-400/60 animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }} />
+          </div>
+          <div className="text-center">
+            <p className="text-white/70 text-sm font-medium">Extracting HD Stream...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Iframe fallback (either extraction failed, or 4s timeout reached)
   return (
     <IframePlayer
       providers={providers}
