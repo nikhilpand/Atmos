@@ -32,7 +32,7 @@ function WatchPageInner() {
   const fileId = searchParams.get('fileId') || undefined;
   const fileNameParam = searchParams.get('fileName') || undefined;
   
-  const [activeProviderId, setActiveProviderId] = useState('');
+  const [activeProviderId, setActiveProviderId] = useState('videasy');
   const [failedProviders, setFailedProviders] = useState<Set<string>>(new Set());
   const [showServers, setShowServers] = useState(false);
   const [showEpisodes, setShowEpisodes] = useState(false);

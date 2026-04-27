@@ -61,7 +61,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     id: "vidlink",
     name: "VidLink",
     slug: "vidlink",
-    urlPattern: "https://atmos-proxy.nkp9450732628.workers.dev/{type}/{tmdb_id}",
+    urlPattern: "https://vidlink.pro/{type}/{tmdb_id}",
     urlStyle: 'path',
     enabled: true,
     priority: 3,
