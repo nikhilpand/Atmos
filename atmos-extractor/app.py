@@ -220,12 +220,19 @@ def _find_stream_in_html(html: str, base_url: str) -> Optional[dict]:
     return None
 
 
-def _extract_iframes(html: str) -> list[str]:
+def _extract_iframes(html: str, base_url: str = "") -> list[str]:
     """Extract iframe src URLs from HTML."""
     soup = BeautifulSoup(html, "lxml")
     srcs = []
     for iframe in soup.find_all("iframe"):
         src = iframe.get("src", "")
+        if src.startswith("//"):
+            src = "https:" + src
+        elif src.startswith("/") and base_url:
+            from urllib.parse import urlparse
+            parsed = urlparse(base_url)
+            src = f"{parsed.scheme}://{parsed.netloc}{src}"
+            
         if src and src.startswith("http"):
             srcs.append(src)
     return srcs
@@ -273,7 +280,7 @@ async def extract_http(embed_url: str, referer: str, provider_id: str) -> Option
             return found
 
         # Level 2: follow iframes
-        iframes = _extract_iframes(html)
+        iframes = _extract_iframes(html, embed_url)
         for iframe_url in iframes[:3]:  # check up to 3 iframes
             iframe_html = await _http_get(session, iframe_url, embed_url)
             if not iframe_html:
@@ -283,6 +290,17 @@ async def extract_http(embed_url: str, referer: str, provider_id: str) -> Option
                 found["provider"] = provider_id
                 print(f"[HTTP] ✓ {provider_id} found stream in iframe HTML")
                 return found
+
+            # Level 3: nested iframes
+            nested_iframes = _extract_iframes(iframe_html, iframe_url)
+            for nested_url in nested_iframes[:2]:
+                nested_html = await _http_get(session, nested_url, iframe_url)
+                if nested_html:
+                    found = _find_stream_in_html(nested_html, nested_url)
+                    if found:
+                        found["provider"] = provider_id
+                        print(f"[HTTP] ✓ {provider_id} found stream in nested iframe")
+                        return found
 
             # Level 3: check for JS files linked from iframe that may contain stream
             soup = BeautifulSoup(iframe_html, "lxml")
@@ -389,18 +407,24 @@ async def extract_playwright(embed_url: str, referer: str, provider_id: str) -> 
                     "button.play", ".play-btn", ".btn-play", "#play-btn",
                     "[class*='play']", "[id*='play']", "button[aria-label*='play' i]",
                     ".jw-icon-playback", ".plyr__control--overlaid", ".vjs-big-play-button",
-                    "button", "[role='button']",
+                    "button", "[role='button']", ".jw-video", "video"
                 ]
-                for sel in play_selectors:
+                
+                # Check main page and all iframes
+                frames_to_check = [page] + page.frames
+                for frame in frames_to_check:
                     if captured_event.is_set():
                         break
-                    try:
-                        el = await page.query_selector(sel)
-                        if el and await el.is_visible():
-                            await el.click(timeout=2000)
-                            await asyncio.sleep(1.5)
-                    except Exception:
-                        pass
+                    for sel in play_selectors:
+                        if captured_event.is_set():
+                            break
+                        try:
+                            el = await frame.query_selector(sel)
+                            if el and await el.is_visible():
+                                await el.click(timeout=1000)
+                                await asyncio.sleep(0.5)
+                        except Exception:
+                            pass
 
             # Wait for stream
             try:
