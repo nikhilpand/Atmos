@@ -261,6 +261,95 @@ async def _http_get(session: "AsyncSession", url: str, referer: str) -> Optional
     return None
 
 
+async def extract_vidsrc_cracked(embed_url: str, referer: str, provider_id: str) -> Optional[dict]:
+    """Direct extraction crack for vidsrc.icu / cloudnestra pipeline."""
+    if not HAS_CURL_CFFI:
+        return None
+        
+    import urllib.parse
+    
+    async with AsyncSession(impersonate="chrome124") as session:
+        # Step 1: Get vidsrcme iframe
+        r1 = await _http_get(session, embed_url, referer)
+        if not r1: 
+            print("[Vidsrc Crack] Step 1 failed: No HTML returned")
+            return None
+        
+        iframe_match = re.search(r'<iframe[^>]+src="([^"]+vidsrcme[^"]+)"', r1)
+        if not iframe_match: 
+            print("[Vidsrc Crack] Step 1 failed: No vidsrcme iframe found")
+            return None
+        iframe_url = iframe_match.group(1)
+        if iframe_url.startswith('//'): iframe_url = 'https:' + iframe_url
+        print(f"[Vidsrc Crack] Found iframe_url: {iframe_url}")
+            
+        # Step 2: Get vidsrcme page to find server hashes
+        r2 = await _http_get(session, iframe_url, referer)
+        if not r2: 
+            print("[Vidsrc Crack] Step 2 failed: No HTML returned")
+            return None
+        
+        servers = re.findall(r'<div[^>]*class="server"[^>]*data-hash="([^"]+)"[^>]*>([^<]+)</div>', r2)
+        if not servers: 
+            print("[Vidsrc Crack] Step 2 failed: No servers found")
+            return None
+        print(f"[Vidsrc Crack] Found servers: {len(servers)}")
+        
+        headers3 = {"Referer": "https://vidsrcme.vidsrc.icu/", "Origin": "https://vidsrcme.vidsrc.icu", "Accept": "*/*"}
+        
+        # Step 3: Hit cloudnestra RCP endpoints for each server
+        for hash_val, name in servers:
+            rcp_url = f"https://cloudnestra.com/rcp/{hash_val}"
+            try:
+                r3 = await session.get(rcp_url, headers=headers3, timeout=HTTP_TIMEOUT)
+                r3_text = r3.text
+                print(f"[Vidsrc Crack] Server {name.strip()} RCP Status: {r3.status_code}")
+                
+                # Check for iframe or window.location redirect to prorcp
+                next_url = None
+                
+                iframe_src = re.search(r"src:\s*['\"]([^'\"]+)['\"]", r3_text)
+                if iframe_src:
+                    next_url = iframe_src.group(1)
+                    print(f"[Vidsrc Crack] Found iframe_src: {next_url}")
+                else:
+                    redirect = re.search(r'window\.location\.replace\s*\(\s*["\']([^"\']+)["\']\s*\)', r3_text)
+                    if redirect:
+                        next_url = redirect.group(1)
+                        print(f"[Vidsrc Crack] Found redirect: {next_url}")
+                        
+                if next_url:
+                    if next_url.startswith('/'): next_url = 'https://cloudnestra.com' + next_url
+                    elif next_url.startswith('//'): next_url = 'https:' + next_url
+                    
+                    r_pro = await session.get(next_url, headers=headers3, timeout=HTTP_TIMEOUT)
+                    r_pro_text = r_pro.text
+                    print(f"[Vidsrc Crack] ProRCP Status: {r_pro.status_code}")
+                    
+                    m3u8s = re.findall(r'(https?://[^\s"\'<>]+m3u8[^\s"\'<>]*)', r_pro_text)
+                    if m3u8s:
+                        stream_url = m3u8s[0]
+                        pass_path = re.search(r'pass_path\s*=\s*["\']([^"\']+)["\']', r_pro_text)
+                        if pass_path:
+                            p_url = pass_path.group(1)
+                            domain = urllib.parse.urlparse('https:' + p_url if p_url.startswith('//') else p_url).netloc
+                            stream_url = stream_url.replace('{v1}', domain.replace('tmstr5.', ''))
+                            
+                        print(f"[HTTP] ✓ {provider_id} cracked stream natively via {name.strip()}")
+                        return {
+                            "url": stream_url,
+                            "type": "hls",
+                            "provider": provider_id,
+                            "server": name.strip()
+                        }
+                    else:
+                        print(f"[Vidsrc Crack] No m3u8 found in ProRCP response for {name.strip()}")
+            except Exception as e:
+                print(f"[Vidsrc Crack] Error on server {name.strip()}: {e}")
+                
+    return None
+
+
 async def extract_http(embed_url: str, referer: str, provider_id: str) -> Optional[dict]:
     """Pure HTTP extraction — 2 levels deep (page → iframe → scan for m3u8)."""
     if not HAS_CURL_CFFI:
@@ -452,6 +541,12 @@ async def extract_one(provider: dict, embed_url: str) -> Optional[dict]:
     """Try HTTP first, fall back to Playwright."""
     pid = provider["id"]
     ref = provider["ref"]
+
+    # Engine 0: Specialized crack for vidsrc_icu (bypasses everything instantly)
+    if pid == "vidsrc_icu" and HAS_CURL_CFFI:
+        result = await extract_vidsrc_cracked(embed_url, ref, pid)
+        if result:
+            return result
 
     # Engine 1: pure HTTP (fast, no bot detection issues)
     if provider.get("http", True) and HAS_CURL_CFFI:
