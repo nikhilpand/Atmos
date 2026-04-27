@@ -1,0 +1,47 @@
+name: Sync atmos-extractor to Hugging Face Spaces
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "atmos-extractor/**"
+
+jobs:
+  sync-to-hf:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Push atmos-extractor to HF Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          pip install huggingface_hub
+          python3 - <<'EOF'
+          import os
+          from huggingface_hub import HfApi
+
+          api = HfApi(token=os.environ["HF_TOKEN"])
+
+          # Create space if not exists
+          api.create_repo(
+              repo_id="nikhil1776/atmos-extractor",
+              repo_type="space",
+              space_sdk="docker",
+              exist_ok=True,
+              private=True,
+          )
+
+          # Upload entire atmos-extractor folder
+          api.upload_folder(
+              folder_path="atmos-extractor",
+              repo_id="nikhil1776/atmos-extractor",
+              repo_type="space",
+              delete_patterns=["*"],   # keep in sync
+          )
+          print("✅ Synced to HF Space: nikhil1776/atmos-extractor")
+          EOF
