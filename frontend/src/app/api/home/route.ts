@@ -28,12 +28,17 @@ async function tmdbFetch(path: string): Promise<any> {
   }
 }
 
-function dedup<T extends { id: number }>(items: T[], seen: Set<number>): T[] {
-  return items.filter(i => {
-    if (!i?.id || seen.has(i.id)) return false;
-    seen.add(i.id);
-    return true;
-  });
+function dedup<T extends { id: number; media_type?: string; name?: string }>(items: T[], seen: Set<string>, forceType?: 'movie' | 'tv'): T[] {
+  const result: T[] = [];
+  for (const i of items) {
+    if (!i?.id) continue;
+    const type = forceType || i.media_type || (i.name ? 'tv' : 'movie');
+    const key = `${type}:${i.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push({ ...i, media_type: type });
+  }
+  return result;
 }
 
 export async function GET() {
@@ -66,7 +71,7 @@ export async function GET() {
     tmdbFetch('/discover/movie?with_genres=878&sort_by=popularity.desc'),
   ]);
 
-  const seen = new Set<number>();
+  const seen = new Set<string>();
 
   // Hero: top 5 trending/day with backdrop
   const hero = dedup(
@@ -85,12 +90,12 @@ export async function GET() {
     {
       id: 'popular_movies',
       title: 'Popular Movies',
-      items: dedup((popularMovies?.results || []).filter((i: any) => i.poster_path), seen).slice(0, 20),
+      items: dedup((popularMovies?.results || []).filter((i: any) => i.poster_path), seen, 'movie').slice(0, 20),
     },
     {
       id: 'top_rated_tv',
       title: 'Top Rated TV',
-      items: dedup((topRatedTV?.results || []).filter((i: any) => i.poster_path), seen).slice(0, 20),
+      items: dedup((topRatedTV?.results || []).filter((i: any) => i.poster_path), seen, 'tv').slice(0, 20),
     },
     {
       id: 'trending_week',
@@ -100,32 +105,32 @@ export async function GET() {
     {
       id: 'now_playing',
       title: 'In Cinemas Now',
-      items: dedup((nowPlaying?.results || []).filter((i: any) => i.poster_path), seen).slice(0, 20),
+      items: dedup((nowPlaying?.results || []).filter((i: any) => i.poster_path), seen, 'movie').slice(0, 20),
     },
     {
       id: 'upcoming',
       title: 'Coming Soon',
-      items: dedup((upcoming?.results || []).filter((i: any) => i.poster_path), seen).slice(0, 20),
+      items: dedup((upcoming?.results || []).filter((i: any) => i.poster_path), seen, 'movie').slice(0, 20),
     },
     {
       id: 'action',
       title: 'Action Movies',
-      items: dedup((actionMovies?.results || []).filter((i: any) => i.poster_path), seen).slice(0, 20),
+      items: dedup((actionMovies?.results || []).filter((i: any) => i.poster_path), seen, 'movie').slice(0, 20),
     },
     {
       id: 'anime',
       title: 'Anime',
-      items: dedup((animeTV?.results || []).filter((i: any) => i.poster_path), seen).slice(0, 20),
+      items: dedup((animeTV?.results || []).filter((i: any) => i.poster_path), seen, 'tv').slice(0, 20),
     },
     {
       id: 'thriller',
       title: 'Thrillers',
-      items: dedup((thrillerMovies?.results || []).filter((i: any) => i.poster_path), seen).slice(0, 20),
+      items: dedup((thrillerMovies?.results || []).filter((i: any) => i.poster_path), seen, 'movie').slice(0, 20),
     },
     {
       id: 'scifi',
       title: 'Sci-Fi',
-      items: dedup((scifiMovies?.results || []).filter((i: any) => i.poster_path), seen).slice(0, 20),
+      items: dedup((scifiMovies?.results || []).filter((i: any) => i.poster_path), seen, 'movie').slice(0, 20),
     },
   ].filter(row => row.items.length > 0);
 

@@ -16,7 +16,9 @@ async function fetchRecommendationsForTitle(tmdbId: number, type: 'movie' | 'tv'
     const res = await fetch(url, { next: { revalidate: 3600 } });
     if (!res.ok) return [];
     const data = await res.json();
-    return (data.results || []).filter((i: TMDBItem) => i.poster_path);
+    return (data.results || [])
+      .filter((i: TMDBItem) => i.poster_path)
+      .map((i: TMDBItem) => ({ ...i, media_type: type }));
   } catch {
     return [];
   }
