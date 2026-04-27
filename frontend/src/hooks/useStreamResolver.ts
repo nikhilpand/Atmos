@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { extractStream, type ExtractedStream } from '@/lib/extractor';
 
 interface UseStreamResolverProps {
@@ -11,55 +11,52 @@ interface UseStreamResolverProps {
   timeoutMs?: number;
 }
 
-export function useStreamResolver({ tmdbId, mediaType, season, episode, timeoutMs = 5000 }: UseStreamResolverProps) {
+export function useStreamResolver({ tmdbId, mediaType, season, episode, timeoutMs = 4000 }: UseStreamResolverProps) {
   const [stream, setStream] = useState<ExtractedStream | null>(null);
   const [isResolving, setIsResolving] = useState(true);
   const [fallbackToIframe, setFallbackToIframe] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    // No TMDB ID = instant iframe fallback
     if (!tmdbId) {
       setFallbackToIframe(true);
       setIsResolving(false);
       return;
     }
 
+    // Abort previous extraction
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
+    // Reset state
     setStream(null);
     setIsResolving(true);
     setFallbackToIframe(false);
 
-    // Cache Key
+    // Check session storage cache first
     const cacheKey = `atmos:stream:${tmdbId}:${mediaType}:${season || 0}:${episode || 0}`;
-
-    // 1. Check Session Storage (instant load)
     try {
       const cachedStr = sessionStorage.getItem(cacheKey);
       if (cachedStr) {
         const cachedData = JSON.parse(cachedStr);
-        // Only use if less than 2 hours old
         if (Date.now() - cachedData.timestamp < 2 * 60 * 60 * 1000) {
           setStream(cachedData.stream);
           setIsResolving(false);
           return;
         }
       }
-    } catch { /* ignore cache errors */ }
+    } catch { /* ignore */ }
 
-    // 2. Start Race: Extraction vs Timeout
-    let iframeTimer: NodeJS.Timeout;
-
-    // After timeoutMs, show iframe as fallback (extraction continues in background)
-    iframeTimer = setTimeout(() => {
-      if (!controller.signal.aborted && isResolving) {
+    // After timeoutMs, show iframe fallback (extraction continues in background)
+    const iframeTimer = setTimeout(() => {
+      if (!controller.signal.aborted) {
         setFallbackToIframe(true);
       }
     }, timeoutMs);
 
-    // Run extraction
+    // Run extraction in parallel
     extractStream(tmdbId, mediaType || 'movie', season, episode, controller.signal)
       .then(result => {
         if (controller.signal.aborted) return;
@@ -67,15 +64,15 @@ export function useStreamResolver({ tmdbId, mediaType, season, episode, timeoutM
 
         if (result.success && result.stream) {
           setStream(result.stream);
-          setFallbackToIframe(false); // Can be restored if iframe was showing
+          setFallbackToIframe(false);
 
-          // Save to session storage
+          // Cache result
           try {
             sessionStorage.setItem(cacheKey, JSON.stringify({
               timestamp: Date.now(),
-              stream: result.stream
+              stream: result.stream,
             }));
-          } catch { /* ignore quota errors */ }
+          } catch { /* ignore */ }
         } else {
           setFallbackToIframe(true);
         }
@@ -95,9 +92,10 @@ export function useStreamResolver({ tmdbId, mediaType, season, episode, timeoutM
       controller.abort();
       clearTimeout(iframeTimer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tmdbId, mediaType, season, episode, timeoutMs]);
 
-  const forceFallback = () => setFallbackToIframe(true);
+  const forceFallback = useCallback(() => setFallbackToIframe(true), []);
 
   return { stream, isResolving, fallbackToIframe, forceFallback };
 }
