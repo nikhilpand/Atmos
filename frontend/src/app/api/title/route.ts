@@ -64,10 +64,11 @@ async function metaSearch(query: string): Promise<any> {
 
 // ─── Build Full Title Response via TMDB ────────────────────────────
 async function buildFromTMDB(id: string, type: string) {
-  const [detail, credits, similar, videos] = await Promise.allSettled([
+  const [detail, credits, recommendations, videos] = await Promise.allSettled([
     tmdbFetch(`/${type}/${id}`),
     tmdbFetch(`/${type}/${id}/credits`),
-    tmdbFetch(`/${type}/${id}/similar?page=1`),
+    // Use /recommendations (collaborative filtering) — much better than /similar
+    tmdbFetch(`/${type}/${id}/recommendations?page=1`),
     tmdbFetch(`/${type}/${id}/videos`),
   ]);
 
@@ -75,8 +76,20 @@ async function buildFromTMDB(id: string, type: string) {
   if (!detailData) return null;
 
   const creditsData = credits.status === 'fulfilled' ? credits.value : null;
-  const similarData = similar.status === 'fulfilled' ? similar.value : null;
+  const recsData = recommendations.status === 'fulfilled' ? recommendations.value : null;
   const videosData = videos.status === 'fulfilled' ? videos.value : null;
+
+  // If recommendations < 6 items, supplement with /similar
+  let similarItems = (recsData?.results || []).filter((s: any) => s.poster_path);
+  if (similarItems.length < 6) {
+    const fallbackData = await tmdbFetch(`/${type}/${id}/similar?page=1`);
+    const fallbackItems = (fallbackData?.results || []).filter((s: any) => s.poster_path);
+    const existingIds = new Set(similarItems.map((s: any) => s.id));
+    for (const item of fallbackItems) {
+      if (!existingIds.has(item.id)) similarItems.push(item);
+      if (similarItems.length >= 18) break;
+    }
+  }
 
   // For TV: extract season list
   let seasons = null;
@@ -119,12 +132,12 @@ async function buildFromTMDB(id: string, type: string) {
       profile_path: c.profile_path,
       order: c.order,
     })),
-    similar: (similarData?.results || []).slice(0, 12).map((s: any) => ({
+    similar: similarItems.slice(0, 18).map((s: any) => ({
       id: s.id,
       title: s.title || s.name,
       poster_path: s.poster_path,
       vote_average: s.vote_average,
-      media_type: type,
+      media_type: s.media_type || type,
       release_date: s.release_date || s.first_air_date,
     })),
     videos: (videosData?.results || [])

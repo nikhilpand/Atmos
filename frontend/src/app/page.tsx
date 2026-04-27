@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import FrostedNavbar from "@/components/ui/FrostedNavbar";
 import ContentRow from "@/components/media/ContentRow";
@@ -9,41 +9,40 @@ import TopTenRow from "@/components/media/TopTenRow";
 import RecommendedRow from "@/components/media/RecommendedRow";
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, Info, TrendingUp } from 'lucide-react';
-import { fetchTrending, fetchHomeRow, type TMDBItem } from '@/lib/api';
-import { HOME_ROWS, GENRES } from '@/lib/constants';
+import { type TMDBItem } from '@/lib/api';
+import { GENRES } from '@/lib/constants';
 import { useTelemetryFlush } from '@/hooks/useTelemetryFlush';
 import { useKeepAlive } from '@/hooks/useKeepAlive';
-import { useLazyLoad } from '@/hooks/useLazyLoad';
 import { Spotlight } from '@/components/blocks/spotlight-new';
 
-// ─── Hero Section ───────────────────────────────────────────────────
-function HeroSection() {
-  const [heroes, setHeroes] = useState<TMDBItem[]>([]);
+interface HomeData {
+  hero: TMDBItem[];
+  top10: TMDBItem[];
+  rows: { id: string; title: string; items: TMDBItem[] }[];
+}
+
+// ─── Single batch fetch for ALL home data ─────────────────────────────
+async function fetchHomeData(): Promise<HomeData | null> {
+  try {
+    const res = await fetch('/api/home', { next: { revalidate: 60 } });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+// ─── Hero Section ─────────────────────────────────────────────────────
+function HeroSection({ heroes }: { heroes: TMDBItem[] }) {
   const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
-    fetchTrending(1, 'all', 'day')
-      .then(data => {
-        const items = data.results
-          .filter(i => i.backdrop_path)
-          .slice(0, 5);
-        setHeroes(items);
-      })
-      .catch(() => { });
-  }, []);
-
-  // Auto-rotate
-  useEffect(() => {
     if (heroes.length <= 1) return;
-    const interval = setInterval(() => {
-      setActiveIndex(prev => (prev + 1) % heroes.length);
-    }, 6000);
+    const interval = setInterval(() => setActiveIndex(p => (p + 1) % heroes.length), 6000);
     return () => clearInterval(interval);
   }, [heroes.length]);
 
-  if (heroes.length === 0) {
-    return <div className="w-full h-[70vh] max-h-[720px] shimmer" />;
-  }
+  if (heroes.length === 0) return <div className="w-full h-[70vh] max-h-[720px] shimmer" />;
 
   const hero = heroes[activeIndex];
   const title = hero.title || hero.name || '';
@@ -66,19 +65,16 @@ function HeroSection() {
         />
       </AnimatePresence>
 
-      {/* Premium Gradient Overlays */}
       <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-black/10 z-10" />
       <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/20 to-transparent z-10" />
       <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-black to-transparent z-10" />
 
-      {/* Spotlight Effect */}
       <Spotlight
         gradientFirst="radial-gradient(68.54% 68.72% at 55.02% 31.46%, hsla(271, 91%, 65%, .12) 0, hsla(271, 91%, 45%, .04) 50%, hsla(271, 91%, 35%, 0) 80%)"
         gradientSecond="radial-gradient(50% 50% at 50% 50%, hsla(187, 92%, 45%, .08) 0, hsla(187, 92%, 35%, .02) 80%, transparent 100%)"
         gradientThird="radial-gradient(50% 50% at 50% 50%, hsla(271, 91%, 65%, .06) 0, hsla(271, 91%, 45%, .02) 80%, transparent 100%)"
       />
 
-      {/* Content */}
       <div className="absolute bottom-0 left-0 right-0 z-20 pb-16 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <AnimatePresence mode="wait">
@@ -90,7 +86,6 @@ function HeroSection() {
               transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
               className="max-w-xl"
             >
-              {/* Meta badges */}
               <div className="flex items-center gap-2 mb-3">
                 <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-600/90 text-[10px] font-bold text-white uppercase tracking-wider">
                   <TrendingUp size={10} /> Trending
@@ -100,9 +95,7 @@ function HeroSection() {
                     TV Series
                   </span>
                 )}
-                {year && (
-                  <span className="text-white/40 text-xs font-medium">{year}</span>
-                )}
+                {year && <span className="text-white/40 text-xs font-medium">{year}</span>}
                 {rating && rating > 0 && (
                   <span className="text-amber-400 text-xs font-semibold">★ {rating.toFixed(1)}</span>
                 )}
@@ -116,6 +109,7 @@ function HeroSection() {
                   {hero.overview}
                 </p>
               )}
+
               <div className="flex gap-3">
                 <Link href={`/watch/${id}?type=${type}`}>
                   <motion.button
@@ -124,7 +118,8 @@ function HeroSection() {
                     className="relative group flex items-center gap-2 px-8 py-3.5 bg-white text-black font-bold rounded-full hover:bg-white/90 transition-all text-sm shadow-2xl shadow-white/10"
                   >
                     <div className="absolute -inset-1 bg-white/20 rounded-full blur-lg opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                    <Play size={18} fill="currentColor" className="relative" /> <span className="relative">Play Now</span>
+                    <Play size={18} fill="currentColor" className="relative" />
+                    <span className="relative">Play Now</span>
                   </motion.button>
                 </Link>
                 <Link href={`/title/${id}?type=${type}&title=${encodeURIComponent(title)}`}>
@@ -140,7 +135,6 @@ function HeroSection() {
             </motion.div>
           </AnimatePresence>
 
-          {/* Dot Indicators + Progress */}
           <div className="flex gap-2 mt-8">
             {heroes.map((_, i) => (
               <button
@@ -168,50 +162,7 @@ function HeroSection() {
   );
 }
 
-// ─── Content Row with Data Fetching ─────────────────────────────────
-function FetchableRow({ config }: { config: typeof HOME_ROWS[number] }) {
-  const [ref, isVisible] = useLazyLoad('300px');
-  const [items, setItems] = useState<TMDBItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    if (!isVisible) return; // Only fetch when scrolled into view
-    fetchHomeRow(config.endpoint, 'params' in config ? config.params as Record<string, string> : undefined)
-      .then(data => setItems(data.results.slice(0, 20)))
-      .catch(() => setItems([]))
-      .finally(() => setIsLoading(false));
-  }, [config.endpoint, isVisible]);
-
-  // Find matching genre for "See All" link
-  const genreParam = 'params' in config ? (config.params as Record<string, string>)?.with_genres : undefined;
-  const seeAllHref = genreParam ? `/genre/${genreParam}?type=movie` : undefined;
-
-  return (
-    <div ref={ref}>
-      <ContentRow
-        title={config.title}
-        items={items}
-        isLoading={isLoading}
-        seeAllHref={seeAllHref}
-      />
-    </div>
-  );
-}
-
-// ─── Top 10 Row with Data ──────────────────────────────────────────
-function TopTenSection() {
-  const [items, setItems] = useState<TMDBItem[]>([]);
-
-  useEffect(() => {
-    fetchTrending(1, 'all', 'day')
-      .then(data => setItems(data.results.filter(i => i.poster_path).slice(0, 10)))
-      .catch(() => setItems([]));
-  }, []);
-
-  return <TopTenRow items={items} />;
-}
-
-// ─── Genre Quick Links ──────────────────────────────────────────────
+// ─── Genre Quick Links ─────────────────────────────────────────────────
 function GenreBar() {
   return (
     <div className="py-4">
@@ -241,31 +192,54 @@ function GenreBar() {
   );
 }
 
-// ─── Home Page ──────────────────────────────────────────────────────
+// ─── Home Page ────────────────────────────────────────────────────────
 export default function Home() {
   useTelemetryFlush();
   useKeepAlive();
 
+  const [homeData, setHomeData] = useState<HomeData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    fetchHomeData()
+      .then(data => setHomeData(data))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  const hero = homeData?.hero || [];
+  const top10 = homeData?.top10 || [];
+  const rows = homeData?.rows || [];
+
   return (
     <div className="min-h-screen pb-24">
       <FrostedNavbar />
-      <HeroSection />
+
+      {isLoading ? (
+        <div className="w-full h-[70vh] max-h-[720px] shimmer" />
+      ) : (
+        <HeroSection heroes={hero} />
+      )}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <GenreBar />
 
-        {/* 1. Continue Watching (highest priority) */}
+        {/* Continue Watching (highest priority — from local store) */}
         <ContinueWatchingRow />
 
-        {/* 2. Personalized Recommendation (from watch history) */}
+        {/* Personalized Recommendations (from watch history) */}
         <RecommendedRow />
 
-        {/* 3. Top 10 Today */}
-        <TopTenSection />
+        {/* Top 10 Today (pre-fetched, deduped) */}
+        <TopTenRow items={top10} />
 
-        {/* 4. Content Rows */}
-        {HOME_ROWS.map(row => (
-          <FetchableRow key={row.id} config={row} />
+        {/* Content rows — all deduped server-side */}
+        {rows.map(row => (
+          <ContentRow
+            key={row.id}
+            title={row.title}
+            items={row.items}
+            isLoading={isLoading}
+          />
         ))}
       </div>
     </div>

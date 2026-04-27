@@ -1,27 +1,24 @@
 "use client";
 
 // ═══════════════════════════════════════════════════════════════════════
-// ATMOS V2.0 — StreamPlayer: 3-Tier Hybrid Playback Engine
+// ATMOS V3.0 — StreamPlayer: 2-Tier Hybrid Playback Engine
 // ═══════════════════════════════════════════════════════════════════════
-// Strategy:
-//   Tier 0: GDrive direct stream (personal library)
-//   Tier 1: Native player via extracted stream (ad-free, downloadable)
-//   Tier 2: Iframe player fallback (broad compatibility)
+// Tier 1: NativePlayer via extracted HLS/MP4 stream (ad-free, full control)
+// Tier 2: IframePlayer fallback (instant, broad compat)
 //
-// The extraction attempt runs in parallel with iframe preloading.
-// If extraction succeeds, we show the native player.
-// If it fails or times out, we seamlessly fall back to iframe.
+// Race: HF Space extraction runs in parallel with 4s iframe countdown.
+// If extraction wins first → NativePlayer. If iframe shown first but
+// extraction later succeeds → banner prompt to switch to native.
 // ═══════════════════════════════════════════════════════════════════════
 
-import React, { useCallback } from 'react';
-import { CONTROL_URL } from '@/lib/constants';
+import React, { useState, useCallback } from 'react';
 import IframePlayer from './IframePlayer';
 import NativePlayer from './NativePlayer';
 import { useStreamResolver } from '@/hooks/useStreamResolver';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Zap, X } from 'lucide-react';
 
 interface StreamPlayerProps {
-  fileId?: string;
-  fileName?: string;
   providers?: { id: string; name: string; url: string; priority: number }[];
   activeProviderId?: string;
   onProviderChange?: (id: string) => void;
@@ -31,11 +28,12 @@ interface StreamPlayerProps {
   season?: number;
   episode?: number;
   onNextEpisode?: () => void;
+  // GDrive direct play (bypasses extraction entirely)
+  fileId?: string;
+  fileName?: string;
 }
 
 export default function StreamPlayer({
-  fileId,
-  fileName,
   providers = [],
   activeProviderId = '',
   onProviderChange = () => {},
@@ -46,38 +44,27 @@ export default function StreamPlayer({
   episode,
   onNextEpisode,
 }: StreamPlayerProps) {
-  // ─── Tier 0: GDrive direct stream (instant) ──────────────────────
-  if (fileId) {
-    const streamUrl = `${CONTROL_URL}/api/stream/${fileId}`;
-    return (
-      <div className="w-full h-full bg-black flex items-center justify-center">
-        <video
-          src={streamUrl}
-          controls
-          autoPlay
-          className="w-full h-full object-contain"
-          onEnded={onNextEpisode}
-        />
-      </div>
-    );
-  }
+  const [useNative, setUseNative] = useState(false);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
 
-  // ─── Tier 1 & 2: Native vs Iframe Race ────────────────────────────
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const { stream, isResolving, fallbackToIframe, forceFallback } = useStreamResolver({
-    tmdbId,
-    mediaType,
-    season,
-    episode,
-    timeoutMs: 4000
-  });
+  const { stream, isResolving, fallbackToIframe, nativeReady, forceFallback, dismissNative } =
+    useStreamResolver({ tmdbId, mediaType, season, episode, timeoutMs: 4000 });
 
-  // Native mode (stream found and no forced fallback)
-  if (stream && !fallbackToIframe) {
+  const handleSwitchToNative = useCallback(() => {
+    setUseNative(true);
+    setBannerDismissed(false);
+  }, []);
+
+  const handleDismissBanner = useCallback(() => {
+    setBannerDismissed(true);
+    dismissNative();
+  }, [dismissNative]);
+
+  // ── Direct native (extraction won before iframe timeout) ──
+  if (stream && !fallbackToIframe && !useNative === false || (stream && useNative)) {
     return (
       <NativePlayer
         stream={stream}
-        title={fileName}
         tmdbId={tmdbId}
         mediaType={mediaType}
         season={season}
@@ -88,7 +75,7 @@ export default function StreamPlayer({
     );
   }
 
-  // Loading state (racing native extraction vs 4s timeout)
+  // ── Loading spinner (extraction in progress, iframe not yet shown) ──
   if (isResolving && !fallbackToIframe) {
     return (
       <div className="w-full h-full bg-black flex items-center justify-center">
@@ -96,27 +83,60 @@ export default function StreamPlayer({
           <div className="relative w-16 h-16">
             <div className="absolute inset-0 rounded-full border-2 border-white/5" />
             <div className="absolute inset-0 rounded-full border-2 border-t-violet-500 animate-spin" />
-            <div className="absolute inset-2 rounded-full border-2 border-t-cyan-400/60 animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }} />
+            <div
+              className="absolute inset-2 rounded-full border-2 border-t-cyan-400/60 animate-spin"
+              style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}
+            />
           </div>
-          <div className="text-center">
-            <p className="text-white/70 text-sm font-medium">Extracting HD Stream...</p>
-          </div>
+          <p className="text-white/60 text-sm">Extracting HD stream…</p>
         </div>
       </div>
     );
   }
 
-  // Iframe fallback (either extraction failed, or 4s timeout reached)
+  // ── Iframe fallback (+ optional "Switch to Native" banner) ──
   return (
-    <IframePlayer
-      providers={providers}
-      activeProviderId={activeProviderId}
-      onProviderChange={onProviderChange}
-      onProviderError={onProviderError}
-      tmdbId={tmdbId}
-      mediaType={mediaType}
-      season={season}
-      episode={episode}
-    />
+    <div className="relative w-full h-full">
+      <IframePlayer
+        providers={providers}
+        activeProviderId={activeProviderId}
+        onProviderChange={onProviderChange}
+        onProviderError={onProviderError}
+        tmdbId={tmdbId}
+        mediaType={mediaType}
+        season={season}
+        episode={episode}
+      />
+
+      {/* Late-win banner: native stream arrived after iframe already showing */}
+      <AnimatePresence>
+        {nativeReady && !bannerDismissed && stream && (
+          <motion.div
+            initial={{ y: 80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 80, opacity: 0 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            className="absolute bottom-16 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl bg-black/80 backdrop-blur-xl border border-violet-500/30 shadow-2xl shadow-violet-900/30"
+          >
+            <Zap size={16} className="text-violet-400 flex-shrink-0" />
+            <p className="text-white/80 text-sm font-medium">
+              Ad-free HD stream ready
+            </p>
+            <button
+              onClick={handleSwitchToNative}
+              className="px-3 py-1.5 rounded-full bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold transition-colors"
+            >
+              Switch
+            </button>
+            <button
+              onClick={handleDismissBanner}
+              className="text-white/40 hover:text-white/70 transition-colors"
+            >
+              <X size={14} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
