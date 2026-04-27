@@ -1,31 +1,23 @@
 """
-ATMOS Stream Extractor — Headless Browser Microservice
-=======================================================
-Uses real Chromium (Playwright) to navigate streaming provider embed pages
-and intercept the actual .m3u8 / .mp4 network requests that their
-obfuscated JS generates. Returns the real stream URL so Atmos can play
-it natively with full HLS.js control.
-
-Endpoints:
-  GET /health           — liveness check
-  GET /extract          — extract stream from a single provider embed URL
-  GET /extract/tmdb     — build URL + extract for a given TMDB ID (convenience)
+ATMOS Stream Extractor v2 — Optimized Headless Browser Microservice
+====================================================================
+Races all providers in PARALLEL. Returns the first winner.
+Tight timeouts so we respond within 25 seconds.
 """
 
 import asyncio
 import os
 import re
 import time
-import json
 from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from playwright.async_api import async_playwright, Browser, BrowserContext, Page
+from playwright.async_api import async_playwright, Browser, BrowserContext
 
-# ─── Stealth wrapper (optional — graceful degrade if not installed) ───
+# ─── Stealth (optional) ───────────────────────────────────────────────
 try:
     from playwright_stealth import stealth_async
     HAS_STEALTH = True
@@ -33,69 +25,68 @@ except ImportError:
     HAS_STEALTH = False
 
 # ─── Config ──────────────────────────────────────────────────────────
-EXTRACTION_TIMEOUT_MS = 20_000      # 20s max per extraction
-NAVIGATION_TIMEOUT_MS = 15_000      # 15s for page load
-MAX_CONCURRENT = 3                  # max parallel extractions
+NAV_TIMEOUT_MS   = 12_000   # page load timeout
+STREAM_WAIT_S    = 12       # seconds to wait for first m3u8/mp4 after load
+MAX_CONCURRENT   = 6        # max parallel browser contexts
 
-# Patterns that indicate a real stream URL
-STREAM_PATTERNS = [
-    re.compile(r'\.m3u8(\?|$|#)'),
-    re.compile(r'\.mp4(\?|$|#)'),
-    re.compile(r'/hls/.*\.ts'),
-    re.compile(r'manifest\.mpd'),
-]
+# Stream URL matchers
+STREAM_RE = re.compile(
+    r'\.(m3u8|mp4|webm|mpd)(\?|$|&|#)',
+    re.IGNORECASE
+)
+SKIP_RE = re.compile(
+    r'(google|doubleclick|analytics|gtag|facebook|googlevideo\.com/videoplayback'
+    r'|gstatic|googleapis|adsystem|pixel\.js|ads\.)',
+    re.IGNORECASE
+)
 
-# Patterns to SKIP (ads, trackers, analytics)
-SKIP_PATTERNS = [
-    re.compile(r'google|doubleclick|analytics|gtag|facebook|pixel|ad\.js|ads\.js', re.I),
-    re.compile(r'googlevideo\.com/videoplayback'),  # YouTube, not what we want
-]
-
-# Patterns that indicate we should ignore this URL as a stream
-IGNORE_STREAM_PATTERNS = [
-    re.compile(r'sample\.m3u8|test\.m3u8|example\.m3u8', re.I),
-]
-
-# Provider embed URL builders
+# Providers ordered by reliability
 PROVIDERS = [
     {
         "id": "vidsrc_icu",
         "name": "VidSrc ICU",
-        "movie_url": "https://vidsrc.icu/embed/movie/{tmdb_id}",
-        "tv_url": "https://vidsrc.icu/embed/tv/{tmdb_id}/{season}/{episode}",
-        "referer": "https://vidsrc.icu/",
-    },
-    {
-        "id": "8stream",
-        "name": "8Stream",
-        "movie_url": "https://8stream.com/embed/movie?tmdb={tmdb_id}",
-        "tv_url": "https://8stream.com/embed/tv?tmdb={tmdb_id}&s={season}&e={episode}",
-        "referer": "https://8stream.com/",
+        "movie": "https://vidsrc.icu/embed/movie/{id}",
+        "tv":    "https://vidsrc.icu/embed/tv/{id}/{s}/{e}",
+        "ref":   "https://vidsrc.icu/",
     },
     {
         "id": "vidsrc_dev",
         "name": "VidSrc Dev",
-        "movie_url": "https://vidsrc.dev/embed/movie/{tmdb_id}",
-        "tv_url": "https://vidsrc.dev/embed/tv/{tmdb_id}/{season}/{episode}",
-        "referer": "https://vidsrc.dev/",
+        "movie": "https://vidsrc.dev/embed/movie/{id}",
+        "tv":    "https://vidsrc.dev/embed/tv/{id}/{s}/{e}",
+        "ref":   "https://vidsrc.dev/",
     },
     {
         "id": "autoembed",
         "name": "AutoEmbed",
-        "movie_url": "https://autoembed.co/movie/tmdb/{tmdb_id}",
-        "tv_url": "https://autoembed.co/tv/tmdb/{tmdb_id}-{season}-{episode}",
-        "referer": "https://autoembed.co/",
+        "movie": "https://autoembed.co/movie/tmdb/{id}",
+        "tv":    "https://autoembed.co/tv/tmdb/{id}-{s}-{e}",
+        "ref":   "https://autoembed.co/",
     },
     {
-        "id": "vidsrc_wtf",
-        "name": "VidSrc WTF",
-        "movie_url": "https://vidsrc.wtf/api/3/movie/?id={tmdb_id}",
-        "tv_url": "https://vidsrc.wtf/api/3/tv/?id={tmdb_id}&s={season}&e={episode}",
-        "referer": "https://vidsrc.wtf/",
+        "id": "vidsrc_cc",
+        "name": "VidSrc CC",
+        "movie": "https://vidsrc.cc/v2/embed/movie/{id}",
+        "tv":    "https://vidsrc.cc/v2/embed/tv/{id}/{s}/{e}",
+        "ref":   "https://vidsrc.cc/",
+    },
+    {
+        "id": "multiembed",
+        "name": "MultiEmbed",
+        "movie": "https://multiembed.mov/?video_id={id}&tmdb=1",
+        "tv":    "https://multiembed.mov/?video_id={id}&tmdb=1&s={s}&e={e}",
+        "ref":   "https://multiembed.mov/",
+    },
+    {
+        "id": "embedsoap",
+        "name": "EmbedSoap",
+        "movie": "https://www.embedsoap.com/embed/movie/?id={id}",
+        "tv":    "https://www.embedsoap.com/embed/tv/?id={id}&s={s}&e={e}",
+        "ref":   "https://www.embedsoap.com/",
     },
 ]
 
-# ─── Global browser instance ──────────────────────────────────────────
+# ─── Globals ─────────────────────────────────────────────────────────
 _playwright = None
 _browser: Optional[Browser] = None
 _semaphore: Optional[asyncio.Semaphore] = None
@@ -103,10 +94,8 @@ _semaphore: Optional[asyncio.Semaphore] = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Start/stop global browser on app lifecycle."""
     global _playwright, _browser, _semaphore
-
-    print("[ATMOS Extractor] Starting Chromium...")
+    print("[Extractor] Launching Chromium...")
     _playwright = await async_playwright().start()
     _browser = await _playwright.chromium.launch(
         headless=True,
@@ -119,159 +108,125 @@ async def lifespan(app: FastAPI):
             "--no-zygote",
             "--disable-gpu",
             "--disable-web-security",
+            "--disable-blink-features=AutomationControlled",
             "--disable-features=IsolateOrigins,site-per-process",
         ],
     )
     _semaphore = asyncio.Semaphore(MAX_CONCURRENT)
-    print("[ATMOS Extractor] Browser ready ✓")
-
+    print("[Extractor] Ready ✓")
     yield
-
-    print("[ATMOS Extractor] Shutting down...")
     if _browser:
         await _browser.close()
     if _playwright:
         await _playwright.stop()
 
 
-app = FastAPI(title="ATMOS Stream Extractor", version="1.0.0", lifespan=lifespan)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["GET"],
-    allow_headers=["*"],
-)
+app = FastAPI(title="ATMOS Stream Extractor", version="2.0.0", lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"], allow_headers=["*"])
 
 
-# ─── Helpers ──────────────────────────────────────────────────────────
+# ─── Core extractor ───────────────────────────────────────────────────
 
-def is_stream_url(url: str) -> bool:
-    """Check if a URL looks like a real video stream."""
-    for pattern in SKIP_PATTERNS:
-        if pattern.search(url):
-            return False
-    for pattern in IGNORE_STREAM_PATTERNS:
-        if pattern.search(url):
-            return False
-    for pattern in STREAM_PATTERNS:
-        if pattern.search(url):
-            return True
-    return False
-
-
-def get_stream_type(url: str) -> str:
-    if ".m3u8" in url or ".ts" in url or ".mpd" in url:
-        return "hls"
-    return "file"
-
-
-async def extract_from_url(embed_url: str, referer: str) -> Optional[dict]:
-    """
-    Open embed_url in a new browser context, intercept stream requests.
-    Returns dict with {url, type, headers} or None.
-    """
+async def extract_one(embed_url: str, referer: str, provider_id: str) -> Optional[dict]:
+    """Run real Chromium, intercept first stream URL. Returns dict or None."""
     if not _browser:
         return None
 
-    context: Optional[BrowserContext] = None
-    captured = asyncio.Event()
+    captured_event = asyncio.Event()
     result: dict = {}
 
-    try:
-        context = await _browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1280, "height": 720},
-            locale="en-US",
-            timezone_id="America/New_York",
-            extra_http_headers={
-                "Referer": referer,
-                "Accept-Language": "en-US,en;q=0.9",
-            },
-        )
-
-        page: Page = await context.new_page()
-
-        # Apply stealth if available
-        if HAS_STEALTH:
-            await stealth_async(page)
-
-        # Intercept ALL requests — capture first stream URL
-        async def on_request(request):
-            if captured.is_set():
-                return
-            url = request.url
-            if is_stream_url(url):
-                result["url"] = url
-                result["type"] = get_stream_type(url)
-                result["headers"] = dict(request.headers)
-                # Remove sensitive headers before returning
-                for h in ["cookie", "authorization"]:
-                    result["headers"].pop(h, None)
-                captured.set()
-
-        page.on("request", on_request)
-
-        # Also intercept responses in case headers differ
-        async def on_response(response):
-            if captured.is_set():
-                return
-            url = response.url
-            if is_stream_url(url) and response.status < 400:
-                result["url"] = url
-                result["type"] = get_stream_type(url)
-                result["headers"] = dict(response.headers)
-                captured.set()
-
-        page.on("response", on_response)
-
-        # Navigate to the embed page
+    async with _semaphore:
+        ctx: Optional[BrowserContext] = None
         try:
-            await page.goto(
-                embed_url,
-                timeout=NAVIGATION_TIMEOUT_MS,
-                wait_until="domcontentloaded",
+            ctx = await _browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+                viewport={"width": 1280, "height": 720},
+                locale="en-US",
+                timezone_id="America/New_York",
+                extra_http_headers={
+                    "Referer": referer,
+                    "Accept-Language": "en-US,en;q=0.9",
+                },
+                # Block images/fonts/css to speed up extraction
+                java_script_enabled=True,
             )
-        except Exception as nav_err:
-            print(f"[WARN] Navigation error for {embed_url}: {nav_err}")
-            # Don't bail — the stream request may still fire after partial load
 
-        # Wait for a stream URL to be captured, or timeout
-        try:
-            await asyncio.wait_for(captured.wait(), timeout=EXTRACTION_TIMEOUT_MS / 1000)
-        except asyncio.TimeoutError:
-            pass
+            page = await ctx.new_page()
 
-        return result if result.get("url") else None
+            # Block heavy resources we don't need
+            await page.route("**/*", lambda route: (
+                route.abort()
+                if route.request.resource_type in ("image", "font", "stylesheet", "media")
+                   and not STREAM_RE.search(route.request.url)
+                else route.continue_()
+            ))
 
-    except Exception as e:
-        print(f"[ERROR] extract_from_url failed for {embed_url}: {e}")
-        return None
-    finally:
-        if context:
+            if HAS_STEALTH:
+                await stealth_async(page)
+
+            def on_request(request):
+                if captured_event.is_set():
+                    return
+                url = request.url
+                if STREAM_RE.search(url) and not SKIP_RE.search(url):
+                    result["url"] = url
+                    result["type"] = "hls" if ".m3u8" in url.lower() else "file"
+                    result["provider"] = provider_id
+                    result["headers"] = {
+                        k: v for k, v in request.headers.items()
+                        if k.lower() not in ("cookie", "authorization")
+                    }
+                    captured_event.set()
+
+            def on_response(response):
+                if captured_event.is_set():
+                    return
+                url = response.url
+                if STREAM_RE.search(url) and not SKIP_RE.search(url) and response.status < 400:
+                    result["url"] = url
+                    result["type"] = "hls" if ".m3u8" in url.lower() else "file"
+                    result["provider"] = provider_id
+                    result["headers"] = dict(response.headers)
+                    captured_event.set()
+
+            page.on("request", on_request)
+            page.on("response", on_response)
+
             try:
-                await context.close()
+                await page.goto(embed_url, timeout=NAV_TIMEOUT_MS, wait_until="domcontentloaded")
             except Exception:
+                pass  # page may be partial — stream requests can still fire
+
+            # Wait for stream capture or timeout
+            try:
+                await asyncio.wait_for(captured_event.wait(), timeout=STREAM_WAIT_S)
+            except asyncio.TimeoutError:
                 pass
 
+        except Exception as e:
+            print(f"[{provider_id}] Error: {e}")
+        finally:
+            if ctx:
+                try:
+                    await ctx.close()
+                except Exception:
+                    pass
 
-def build_provider_url(provider: dict, tmdb_id: str, media_type: str, season: int = 0, episode: int = 0) -> str:
-    """Build the embed URL for a given provider and media."""
-    if media_type == "movie":
-        template = provider["movie_url"]
-        return template.replace("{tmdb_id}", tmdb_id)
-    else:
-        template = provider["tv_url"]
-        return (
-            template
-            .replace("{tmdb_id}", tmdb_id)
-            .replace("{season}", str(season))
-            .replace("{episode}", str(episode))
-        )
+    return result if result.get("url") else None
+
+
+def build_url(provider: dict, media_type: str, tmdb_id: str, season: int, episode: int) -> str:
+    template = provider["movie"] if media_type == "movie" else provider["tv"]
+    return (
+        template
+        .replace("{id}", tmdb_id)
+        .replace("{s}", str(season))
+        .replace("{e}", str(episode))
+    )
 
 
 # ─── Routes ───────────────────────────────────────────────────────────
@@ -282,90 +237,76 @@ async def health():
         "status": "ok",
         "browser": "running" if _browser and _browser.is_connected() else "down",
         "stealth": HAS_STEALTH,
+        "providers": len(PROVIDERS),
         "timestamp": time.time(),
-    }
-
-
-@app.get("/extract")
-async def extract_direct(
-    url: str = Query(..., description="Full embed URL to extract stream from"),
-    referer: str = Query("", description="Referer header to send"),
-):
-    """
-    Extract a stream URL directly from an embed URL.
-    
-    Example: /extract?url=https://vidsrc.icu/embed/tv/85552/1/3
-    """
-    if not url.startswith("http"):
-        raise HTTPException(status_code=400, detail="Invalid URL")
-
-    async with _semaphore:
-        start = time.time()
-        result = await extract_from_url(url, referer or url)
-
-    if not result:
-        raise HTTPException(status_code=404, detail="No stream found")
-
-    return {
-        "success": True,
-        "stream": result,
-        "extractionTimeMs": int((time.time() - start) * 1000),
-        "sourceUrl": url,
     }
 
 
 @app.get("/extract/tmdb")
 async def extract_by_tmdb(
-    id: str = Query(..., description="TMDB ID"),
-    type: str = Query("movie", description="'movie' or 'tv'"),
-    season: int = Query(0, description="Season number (TV only)"),
-    episode: int = Query(0, description="Episode number (TV only)"),
+    id: str = Query(...),
+    type: str = Query("movie"),
+    season: int = Query(0),
+    episode: int = Query(0),
 ):
-    """
-    Try all providers in order and return the first successful stream extraction.
-    
-    Example: /extract/tmdb?id=85552&type=tv&season=1&episode=3
-    """
+    """Race all providers in parallel — first m3u8/mp4 URL wins."""
     if type == "tv" and (not season or not episode):
-        raise HTTPException(status_code=400, detail="TV requires season and episode")
+        raise HTTPException(400, "TV requires season and episode")
 
     start = time.time()
-    errors = []
 
-    for provider in PROVIDERS:
-        embed_url = build_provider_url(provider, id, type, season, episode)
-        referer = provider["referer"]
+    # Build tasks for all providers
+    tasks = [
+        extract_one(build_url(p, type, id, season, episode), p["ref"], p["id"])
+        for p in PROVIDERS
+    ]
 
-        print(f"[ATMOS] Trying {provider['name']}: {embed_url}")
+    # Race them all — return first non-None result
+    result = None
+    for coro in asyncio.as_completed(tasks):
+        res = await coro
+        if res and res.get("url"):
+            result = res
+            break  # cancel remaining via garbage collection
 
-        async with _semaphore:
-            result = await extract_from_url(embed_url, referer)
+    elapsed = int((time.time() - start) * 1000)
 
-        if result and result.get("url"):
-            elapsed = int((time.time() - start) * 1000)
-            print(f"[ATMOS] ✓ Got stream from {provider['name']} in {elapsed}ms")
-            return {
-                "success": True,
-                "stream": {
-                    **result,
-                    "provider": provider["id"],
-                    "providerName": provider["name"],
-                },
+    if not result:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "success": False,
+                "error": "No stream found from any provider",
                 "extractionTimeMs": elapsed,
-                "sourceUrl": embed_url,
-            }
-        else:
-            msg = f"{provider['name']} failed"
-            print(f"[ATMOS] ✗ {msg}")
-            errors.append(msg)
+            },
+        )
 
-    return JSONResponse(
-        status_code=404,
-        content={
-            "success": False,
-            "error": "No stream found from any provider",
-            "providersChecked": len(PROVIDERS),
-            "errors": errors,
-            "extractionTimeMs": int((time.time() - start) * 1000),
-        },
+    # Find provider name
+    provider_name = next(
+        (p["name"] for p in PROVIDERS if p["id"] == result.get("provider")), "Unknown"
     )
+
+    return {
+        "success": True,
+        "stream": {**result, "providerName": provider_name},
+        "extractionTimeMs": elapsed,
+    }
+
+
+@app.get("/extract")
+async def extract_direct(
+    url: str = Query(...),
+    referer: str = Query(""),
+):
+    """Extract stream from any embed URL directly."""
+    if not url.startswith("http"):
+        raise HTTPException(400, "Invalid URL")
+    start = time.time()
+    result = await extract_one(url, referer or url, "custom")
+    if not result:
+        raise HTTPException(404, "No stream found")
+    return {
+        "success": True,
+        "stream": result,
+        "extractionTimeMs": int((time.time() - start) * 1000),
+    }
