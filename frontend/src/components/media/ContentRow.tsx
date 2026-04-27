@@ -2,7 +2,6 @@
 
 import React, { useRef, useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { motion } from 'framer-motion';
 import TitleCard from './TitleCard';
 import type { TMDBItem } from '@/lib/api';
 
@@ -111,16 +110,13 @@ export default function ContentRow({ title, items, seeAllHref, isLoading }: Cont
           style={{ scrollSnapType: 'x mandatory' }}
         >
           {items.map((item, i) => (
-            <motion.div
+            <div
               key={`${item.id}-${i}`}
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: Math.min(i * 0.04, 0.3) }}
-              className="title-card flex-shrink-0 w-[140px] sm:w-[155px] md:w-[165px] lg:w-[175px]"
+              className="title-card flex-shrink-0 w-[140px] sm:w-[155px] md:w-[165px] lg:w-[175px] card-hover"
               style={{ scrollSnapAlign: 'start' }}
             >
               <TitleCard item={item} />
-            </motion.div>
+            </div>
           ))}
         </div>
       </div>

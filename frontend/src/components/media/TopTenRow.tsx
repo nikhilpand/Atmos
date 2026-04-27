@@ -3,7 +3,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { motion } from 'framer-motion';
 import { posterUrl, type TMDBItem } from '@/lib/api';
 
 interface TopTenRowProps {
@@ -93,12 +92,8 @@ export default function TopTenRow({ items, title = "Top 10 Today" }: TopTenRowPr
                 href={`/title/${id}?type=${type}&title=${encodeURIComponent(itemTitle)}`}
                 prefetch={true}
               >
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: Math.min(i * 0.06, 0.5) }}
-                  whileHover={{ scale: 1.03 }}
-                  className="relative flex-shrink-0 flex items-end cursor-pointer group"
+                <div
+                  className="relative flex-shrink-0 flex items-end cursor-pointer group card-hover"
                   style={{ scrollSnapAlign: 'start', width: '220px', height: '200px' }}
                 >
                   {/* Large Rank Number */}
@@ -134,7 +129,7 @@ export default function TopTenRow({ items, title = "Top 10 Today" }: TopTenRowPr
                       <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
                     </div>
                   </div>
-                </motion.div>
+                </div>
               </Link>
             );
           })}

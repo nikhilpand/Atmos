@@ -6,7 +6,6 @@
 
 import React, { useRef, useState, useEffect } from 'react';
 import Link from 'next/link';
-import { motion, AnimatePresence } from 'framer-motion';
 import { Play, X, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useWatchStore, type WatchEntry } from '@/store/useWatchStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -75,20 +74,18 @@ export default function ContinueWatchingRow() {
           ref={scrollRef}
           className="flex gap-3 overflow-x-auto scrollbar-none scroll-smooth px-1 pb-2"
         >
-          <AnimatePresence>
-            {items.map((item) => (
-              <ContinueCard
-                key={`${item.tmdbId}:${item.season ?? ''}:${item.episode ?? ''}`}
-                item={item}
-                onRemove={() => {
-                  const key = item.season !== undefined && item.episode !== undefined
-                    ? `${item.tmdbId}:${item.season}:${item.episode}`
-                    : item.tmdbId;
-                  clearEntry(key);
-                }}
-              />
-            ))}
-          </AnimatePresence>
+          {items.map((item) => (
+            <ContinueCard
+              key={`${item.tmdbId}:${item.season ?? ''}:${item.episode ?? ''}`}
+              item={item}
+              onRemove={() => {
+                const key = item.season !== undefined && item.episode !== undefined
+                  ? `${item.tmdbId}:${item.season}:${item.episode}`
+                  : item.tmdbId;
+                clearEntry(key);
+              }}
+            />
+          ))}
         </div>
       </div>
     </section>
@@ -117,13 +114,7 @@ function ContinueCard({ item, onRemove }: { item: WatchEntry; onRemove: () => vo
     : 0;
 
   return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
-      className="relative flex-shrink-0 w-[280px] sm:w-[320px] group/card"
-    >
+    <div className="relative flex-shrink-0 w-[280px] sm:w-[320px] group/card card-hover">
       {/* Remove button */}
       <button
         onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(); }}
@@ -154,12 +145,9 @@ function ContinueCard({ item, onRemove }: { item: WatchEntry; onRemove: () => vo
 
           {/* Play overlay on hover */}
           <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/card:opacity-100 transition-opacity flex items-center justify-center">
-            <motion.div
-              whileHover={{ scale: 1.1 }}
-              className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-xl flex items-center justify-center border border-white/30 shadow-2xl"
-            >
+            <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-xl flex items-center justify-center border border-white/30 shadow-2xl hover:scale-110 transition-transform">
               <Play size={24} className="text-white ml-1" fill="white" />
-            </motion.div>
+            </div>
           </div>
 
           {/* Bottom info overlay */}
@@ -179,19 +167,16 @@ function ContinueCard({ item, onRemove }: { item: WatchEntry; onRemove: () => vo
 
           {/* Progress bar with gradient */}
           <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-white/10 z-20">
-            <motion.div
-              className="h-full rounded-r-full"
+            <div
+              className="h-full rounded-r-full transition-[width] duration-700 ease-out"
               style={{
                 background: 'linear-gradient(90deg, #8b5cf6, #06b6d4)',
                 width: `${Math.min(100, item.progress)}%`,
               }}
-              initial={{ width: 0 }}
-              animate={{ width: `${Math.min(100, item.progress)}%` }}
-              transition={{ duration: 0.8, ease: 'easeOut' }}
             />
           </div>
         </div>
       </Link>
-    </motion.div>
+    </div>
   );
 }

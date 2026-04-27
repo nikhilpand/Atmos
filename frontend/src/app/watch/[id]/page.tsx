@@ -175,7 +175,13 @@ function WatchPageInner() {
   // ── Auto-hide controls ──
   useEffect(() => {
     let timer: NodeJS.Timeout;
+    let lastMove = 0;
+    
     const show = () => {
+      const now = Date.now();
+      if (now - lastMove < 200) return; // throttle to 5fps
+      lastMove = now;
+      
       setShowControls(true);
       clearTimeout(timer);
       timer = setTimeout(() => setShowControls(false), 4000);
@@ -298,15 +304,11 @@ function WatchPageInner() {
       )}
 
       {/* ── Top Controls ── */}
-      <AnimatePresence>
-        {showControls && (
-          <motion.div
-            initial={{ y: -60, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: -60, opacity: 0 }}
-            transition={{ duration: 0.25 }}
-            className="absolute top-0 left-0 right-0 z-50 bg-gradient-to-b from-black/90 via-black/50 to-transparent"
-          >
+      <div
+        className={`absolute top-0 left-0 right-0 z-50 bg-gradient-to-b from-black/90 via-black/50 to-transparent transition-all duration-500 ease-out ${
+          showControls ? 'translate-y-0 opacity-100 pointer-events-auto' : '-translate-y-[60px] opacity-0 pointer-events-none'
+        }`}
+      >
             <div className="flex items-center justify-between p-3 sm:p-4 gap-2 sm:gap-4" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0px))' }}>
               {/* Left: Back + Title */}
               <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
@@ -400,9 +402,7 @@ function WatchPageInner() {
                 </motion.div>
               )}
             </AnimatePresence>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      </div>
 
       {/* ═══ Netflix-Style Episode Drawer (slides from right) ═══ */}
       <AnimatePresence>
@@ -565,15 +565,12 @@ function WatchPageInner() {
       </AnimatePresence>
 
       {/* ── Bottom Episode Nav Bar (TV Shows — Netflix-style) ── */}
-      {mediaType === 'tv' && showControls && !showEpisodes && (
-        <AnimatePresence>
-          <motion.div
-            initial={{ y: 60, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 60, opacity: 0 }}
-            transition={{ duration: 0.25 }}
-            className="absolute bottom-0 left-0 right-0 z-50 bg-gradient-to-t from-black/90 via-black/50 to-transparent"
-          >
+      {mediaType === 'tv' && !showEpisodes && (
+        <div
+          className={`absolute bottom-0 left-0 right-0 z-50 bg-gradient-to-t from-black/90 via-black/50 to-transparent transition-all duration-500 ease-out ${
+            showControls ? 'translate-y-0 opacity-100 pointer-events-auto' : 'translate-y-[60px] opacity-0 pointer-events-none'
+          }`}
+        >
             <div className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}>
               {/* Previous Episode */}
               <button
@@ -617,8 +614,7 @@ function WatchPageInner() {
                 <span className="hidden sm:inline">Next</span> <ChevronRight size={14} />
               </button>
             </div>
-          </motion.div>
-        </AnimatePresence>
+        </div>
       )}
 
       {/* ── Up Next Overlay ── */}

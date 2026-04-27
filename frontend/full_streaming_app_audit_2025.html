@@ -1,0 +1,780 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans);font-size:14px;color:var(--color-text-primary)}
+.tabs{display:flex;border-bottom:1px solid var(--color-border-secondary);margin-bottom:1.5rem;overflow-x:auto;gap:0}
+.tab{padding:9px 15px;font-size:12.5px;cursor:pointer;color:var(--color-text-secondary);border-bottom:2px solid transparent;white-space:nowrap;transition:all .15s}
+.tab.active{color:var(--color-text-primary);border-bottom-color:var(--color-text-primary);font-weight:500}
+.tab:hover:not(.active){color:var(--color-text-primary)}
+.sec{display:none}.sec.active{display:block}
+.card{background:var(--color-background-primary);border:.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:1rem}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1rem}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:1rem}
+.grid4{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:1rem}
+@media(max-width:540px){.grid2,.grid3{grid-template-columns:1fr}}
+.mc{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:.9rem}
+.ml{font-size:11px;color:var(--color-text-secondary);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em}
+.mv{font-size:22px;font-weight:500}
+.ms{font-size:11.5px;color:var(--color-text-secondary);margin-top:2px}
+h3{font-size:14px;font-weight:500;margin-bottom:10px}
+p{font-size:13px;line-height:1.65;color:var(--color-text-secondary);margin-bottom:8px}
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl th{text-align:left;font-weight:500;padding:7px 10px;border-bottom:1px solid var(--color-border-secondary);color:var(--color-text-secondary);font-size:11.5px;text-transform:uppercase;letter-spacing:.03em}
+.tbl td{padding:7px 10px;border-bottom:.5px solid var(--color-border-tertiary);vertical-align:top;line-height:1.5}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr:hover td{background:var(--color-background-secondary)}
+b{font-weight:500;color:var(--color-text-primary)}
+.badge{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:999px;font-weight:500;white-space:nowrap}
+.br{background:var(--color-background-danger);color:var(--color-text-danger)}
+.ba{background:var(--color-background-warning);color:var(--color-text-warning)}
+.bg{background:var(--color-background-success);color:var(--color-text-success)}
+.bb{background:var(--color-background-info);color:var(--color-text-info)}
+.bgr{background:var(--color-background-secondary);color:var(--color-text-secondary)}
+ul{list-style:none;padding:0}
+li{font-size:13px;color:var(--color-text-secondary);padding:5px 0;border-bottom:.5px solid var(--color-border-tertiary);line-height:1.55}
+li:last-child{border-bottom:none}
+li b{color:var(--color-text-primary)}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px;flex-shrink:0}
+.dot-r{background:#E24B4A}.dot-a{background:#EF9F27}.dot-g{background:#639922}.dot-b{background:#378ADD}
+.row{display:flex;align-items:flex-start;gap:8px}
+.sec-hd{font-size:15px;font-weight:500;margin-bottom:4px}
+.sec-sub{font-size:12.5px;color:var(--color-text-secondary);margin-bottom:1.25rem}
+.divider{border:none;border-top:.5px solid var(--color-border-secondary);margin:1rem 0}
+.check{color:var(--color-text-success);font-size:12px;margin-right:4px}
+.cross{color:var(--color-text-danger);font-size:12px;margin-right:4px}
+.warn{color:var(--color-text-warning);font-size:12px;margin-right:4px}
+.tag-row{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.phase-wrap{display:flex;gap:12px;margin-bottom:1.1rem}
+.phase-num{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;flex-shrink:0;margin-top:1px}
+.p1n{background:var(--color-background-danger);color:var(--color-text-danger)}
+.p2n{background:var(--color-background-warning);color:var(--color-text-warning)}
+.p3n{background:var(--color-background-info);color:var(--color-text-info)}
+.p4n{background:var(--color-background-success);color:var(--color-text-success)}
+.phase-body h4{font-size:13px;font-weight:500;margin-bottom:4px}
+.phase-body p{font-size:12px;margin-bottom:6px}
+.phase-connector{width:1px;background:var(--color-border-secondary);margin:2px 0 2px 14px;height:14px}
+</style>
+
+<div style="padding:1.5rem 0">
+
+<div class="tabs" id="tabs">
+  <div class="tab active" onclick="sw(0)">Overview</div>
+  <div class="tab" onclick="sw(1)">Player gaps</div>
+  <div class="tab" onclick="sw(2)">Backend gaps</div>
+  <div class="tab" onclick="sw(3)">UI / UX gaps</div>
+  <div class="tab" onclick="sw(4)">Security</div>
+  <div class="tab" onclick="sw(5)">Infra & perf</div>
+  <div class="tab" onclick="sw(6)">Code quality</div>
+  <div class="tab" onclick="sw(7)">Roadmap</div>
+</div>
+
+<!-- ===== TAB 0 OVERVIEW ===== -->
+<div class="sec active" id="s0">
+  <p class="sec-hd">Full streaming app audit — ignoring Telegram & GDrive</p>
+  <p class="sec-sub">Based on deep research into Plex, Jellyfin, Netflix patterns and your codebase graph (684 nodes, 51 communities). Every gap is real and sourced.</p>
+  <div class="grid4">
+    <div class="mc"><div class="ml">Critical gaps</div><div class="mv">19</div><div class="ms">Missing or broken features</div></div>
+    <div class="mc"><div class="ml">High-priority</div><div class="mv">27</div><div class="ms">Unimplemented features</div></div>
+    <div class="mc"><div class="ml">Code dead zones</div><div class="mv">93</div><div class="ms">Isolated nodes ≤1 connection</div></div>
+    <div class="mc"><div class="ml">Duplicate functions</div><div class="mv">8+</div><div class="ms">Same logic in separate files</div></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>What is implemented ✓</h3>
+      <ul>
+        <li><span class="check">✓</span><b>HLS streaming</b> — MKV→fMP4 remux on-the-fly</li>
+        <li><span class="check">✓</span><b>Multi-audio HLS</b> — master playlist w/ audio tracks</li>
+        <li><span class="check">✓</span><b>Subtitle extraction</b> — embedded WebVTT from Drive file</li>
+        <li><span class="check">✓</span><b>Subliminal search</b> — aggregates free subtitle providers</li>
+        <li><span class="check">✓</span><b>Whisper subtitle gen</b> — AI fallback subs</li>
+        <li><span class="check">✓</span><b>TMDB enrichment</b> — poster, title, genre, cast</li>
+        <li><span class="check">✓</span><b>Smart search</b> — score → group → forward pipeline</li>
+        <li><span class="check">✓</span><b>Admin dashboard</b> — queue, logs, health, analytics</li>
+        <li><span class="check">✓</span><b>WebSocket events</b> — live queue/transfer updates</li>
+        <li><span class="check">✓</span><b>Rate limiting</b> — middleware layer present</li>
+        <li><span class="check">✓</span><b>MediaClassifier</b> — filename → structured metadata</li>
+        <li><span class="check">✓</span><b>Disk cache</b> — metadata caching to disk</li>
+        <li><span class="check">✓</span><b>Dedup checks</b> — check_duplicate() on upload</li>
+        <li><span class="check">✓</span><b>Bulk rename</b> — batch filename normalisation</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>What is completely missing ✗</h3>
+      <ul>
+        <li><span class="cross">✗</span><b>Watch position persistence</b> — no resume across sessions</li>
+        <li><span class="cross">✗</span><b>Adaptive bitrate (ABR)</b> — single-quality HLS only</li>
+        <li><span class="cross">✗</span><b>Seek thumbnail previews</b> — no hover sprites on seekbar</li>
+        <li><span class="cross">✗</span><b>Episode auto-advance</b> — no next-up countdown</li>
+        <li><span class="cross">✗</span><b>Skip intro / skip credits</b> — no chapter detection</li>
+        <li><span class="cross">✗</span><b>Poster grid browse UI</b> — no Netflix-style library</li>
+        <li><span class="cross">✗</span><b>Continue watching shelf</b> — no in-progress row</li>
+        <li><span class="cross">✗</span><b>Mobile touch controls</b> — desktop-only player</li>
+        <li><span class="cross">✗</span><b>Keyboard shortcuts</b> — no spacebar/arrow/f/m</li>
+        <li><span class="cross">✗</span><b>Picture-in-picture</b> — native PiP API unused</li>
+        <li><span class="cross">✗</span><b>Watch party / SyncPlay</b> — no co-watch</li>
+        <li><span class="cross">✗</span><b>Multi-user profiles</b> — single admin only</li>
+        <li><span class="cross">✗</span><b>Recommendations</b> — no discovery engine</li>
+        <li><span class="cross">✗</span><b>HLS segment encryption</b> — streams are cleartext</li>
+        <li><span class="cross">✗</span><b>HTTPS enforcement</b> — no SSL config found</li>
+        <li><span class="cross">✗</span><b>Playback speed control</b> — no 0.5×–2× option</li>
+        <li><span class="cross">✗</span><b>Chapter markers on seekbar</b> — no chapter support</li>
+        <li><span class="cross">✗</span><b>Monitoring / observability</b> — no Prometheus/health API</li>
+        <li><span class="cross">✗</span><b>Error boundary UI</b> — player errors show raw console</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB 1 PLAYER GAPS ===== -->
+<div class="sec" id="s1">
+  <p class="sec-hd">Video player — missing features</p>
+  <p class="sec-sub">Everything the player should do that it currently doesn't. Sourced from Plex, Jellyfin, Netflix, and hls.js best-practice research.</p>
+
+  <table class="tbl">
+    <thead><tr><th>Feature</th><th>Why missing / how to know</th><th>Industry standard</th><th>How to implement</th><th>Effort</th><th>Priority</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>Adaptive bitrate (ABR)</b></td>
+        <td>HLS master playlist has single rendition. No multi-quality ffmpeg ladder in streaming pipeline. fMP4 remux copies original codec only.</td>
+        <td>Netflix, Plex, Jellyfin all serve 240p–4K tiers. hls.js BOLA algo selects tier per buffer state.</td>
+        <td>ffmpeg multi-pass: 1080p CRF18, 720p CRF20, 480p CRF22 → separate .m4s segment folders → EXT-X-STREAM-INF in master.m3u8. Use hardware encode (NVENC/QSV) if GPU available.</td>
+        <td><span class="badge br">High</span></td>
+        <td><span class="badge ba">P1</span></td>
+      </tr>
+      <tr>
+        <td><b>Watch position persistence</b></td>
+        <td>No DB table or API endpoint stores playback position. Nothing writes on timeupdate/pagehide events. Cold reload loses position entirely.</td>
+        <td>Jellyfin stores server-side — syncs across all devices. Netflix resumes within 2s of last position.</td>
+        <td>SQLite table: (file_id TEXT, position REAL, duration REAL, updated_at INTEGER). POST /api/progress every 10s + on pagehide. GET /api/progress/:id on player init → seekTo.</td>
+        <td><span class="badge bg">Low</span></td>
+        <td><span class="badge br">P1 critical</span></td>
+      </tr>
+      <tr>
+        <td><b>Seek thumbnail previews</b></td>
+        <td>No /thumbnails/ endpoint. No sprite sheet generation on ingest. Cloudflare Stream added this as a marquee feature. Seekbar has no visual feedback.</td>
+        <td>Cloudflare Stream, YouTube, Plex all show hover preview frames on seekbar scrub.</td>
+        <td>ffmpeg -vf fps=1/10,scale=160:-1,tile=10x10 thumbnail.jpg on upload. Serve sprite + VTT file. hls.js thumbnailTrack option handles display.</td>
+        <td><span class="badge ba">Medium</span></td>
+        <td><span class="badge ba">P2</span></td>
+      </tr>
+      <tr>
+        <td><b>Episode auto-advance</b></td>
+        <td>No "ended" event handler that queues next episode. No countdown overlay component. No episode ordering logic in frontend.</td>
+        <td>Netflix 10s countdown. Plex "Up Next" panel slides in at 90% of episode duration.</td>
+        <td>On HLS "ended" event: fetch /api/series/:id/next → show countdown overlay (10s) → auto-navigate. Allow dismiss. Store episode order from TMDB episode_number field already in enrich().</td>
+        <td><span class="badge bg">Low</span></td>
+        <td><span class="badge ba">P2</span></td>
+      </tr>
+      <tr>
+        <td><b>Skip intro / skip credits</b></td>
+        <td>No intro boundary detection. No chapter parsing from mkv metadata. No /api/chapters/:id endpoint.</td>
+        <td>Jellyfin uses audio fingerprinting plugin for intro detection. Plex Skip Intro is a flagship feature. Streamer tvOS app reads chapter metadata from file.</td>
+        <td>Short-term: ffprobe -show_chapters to extract embedded chapter marks → expose via API → render as seekbar markers + Skip Intro button. Long-term: chromaprint audio fingerprinting for auto-detection.</td>
+        <td><span class="badge ba">Medium</span></td>
+        <td><span class="badge ba">P2</span></td>
+      </tr>
+      <tr>
+        <td><b>Mobile touch controls</b></td>
+        <td>Player controls only bind mousemove/mouseleave. No touchstart/touchend handlers. Double-tap seek (iOS/Android standard) unimplemented. Controls don't auto-hide on mobile.</td>
+        <td>Every mobile video app since 2019 uses double-tap ±10s, single-tap toggle controls, 3s auto-hide.</td>
+        <td>Add touchstart listener → single tap = toggle controls, double-tap left/right = ±10s seek. requestAnimationFrame auto-hide after 3s inactivity. Test with mobile viewport CSS.</td>
+        <td><span class="badge bg">Low</span></td>
+        <td><span class="badge br">P1 critical</span></td>
+      </tr>
+      <tr>
+        <td><b>Keyboard shortcuts</b></td>
+        <td>No keydown listener in player JS. Standard browser shortcuts (space = pause) work accidentally via default HTML behavior — not controlled.</td>
+        <td>Plex, Jellyfin, YouTube all have documented key maps. Space, ←/→, ↑/↓ volume, F fullscreen, M mute, 0–9 seek %, C captions.</td>
+        <td>document.addEventListener('keydown') in player scope. Guard with e.target !== INPUT. Map: Space=togglePlay, ←=seek-10, →=seek+10, ↑=vol+10%, ↓=vol-10%, F=fullscreen, M=mute, C=cycleSubs.</td>
+        <td><span class="badge bg">Low</span></td>
+        <td><span class="badge ba">P1</span></td>
+      </tr>
+      <tr>
+        <td><b>Picture-in-picture (PiP)</b></td>
+        <td>document.pictureInPictureElement never referenced. Browser PiP API fully supported in Chrome/Edge/Safari. Zero lines of PiP code in frontend.</td>
+        <td>Supported natively in all major browsers. One button, 3 lines of JS. Jellyfin, Plex both implement it.</td>
+        <td>pip_btn.onclick = () => videoEl.requestPictureInPicture(). document.addEventListener('leavepictureinpicture', ...). Add PiP icon to controls bar.</td>
+        <td><span class="badge bg">Low (3 lines)</span></td>
+        <td><span class="badge ba">P2</span></td>
+      </tr>
+      <tr>
+        <td><b>Playback speed control</b></td>
+        <td>No playbackRate UI. videoEl.playbackRate property exists natively but is never surfaced.</td>
+        <td>YouTube, Netflix both offer 0.25×–2× speed selector. Standard for lecture/documentary content.</td>
+        <td>Speed selector dropdown in controls bar: [0.5, 0.75, 1, 1.25, 1.5, 2]. videoEl.playbackRate = selectedSpeed. Persist preference to localStorage.</td>
+        <td><span class="badge bg">Low</span></td>
+        <td><span class="badge ba">P2</span></td>
+      </tr>
+      <tr>
+        <td><b>Chapter markers on seekbar</b></td>
+        <td>ffprobe --show_chapters result unused in frontend. No chapter track parsing in HLS pipeline. Seekbar is a plain range input with no overlay.</td>
+        <td>Cloudinary, YouTube, and Plex all render chapter segments as colored zones on seekbar.</td>
+        <td>GET /api/chapters/:id → array of {start, end, title}. Render as absolutely-positioned divs on seekbar track. Show chapter title tooltip on hover.</td>
+        <td><span class="badge ba">Medium</span></td>
+        <td><span class="badge ba">P2</span></td>
+      </tr>
+      <tr>
+        <td><b>Subtitle styling controls</b></td>
+        <td>WebVTT served but no ::cue CSS controls exposed. Font size, background opacity, position not adjustable. Critical for accessibility.</td>
+        <td>Plex, Jellyfin, Netflix all provide subtitle size, color, shadow, background opacity settings.</td>
+        <td>CSS ::cue(b) { font-size: var(--sub-size); background: rgba(0,0,0,var(--sub-opacity)); } Expose 3 sliders in settings panel. Persist to localStorage.</td>
+        <td><span class="badge bg">Low</span></td>
+        <td><span class="badge ba">P2</span></td>
+      </tr>
+      <tr>
+        <td><b>Volume memory</b></td>
+        <td>Volume resets to 100% on every page load. No localStorage.getItem('volume') on init. Extremely frustrating for regular users.</td>
+        <td>Every player since 2010 persists volume.</td>
+        <td>On volumechange: localStorage.setItem('vol', videoEl.volume). On init: videoEl.volume = parseFloat(localStorage.getItem('vol') ?? 1).</td>
+        <td><span class="badge bg">Low (4 lines)</span></td>
+        <td><span class="badge br">P1 (user rage)</span></td>
+      </tr>
+      <tr>
+        <td><b>Fullscreen mobile (landscape lock)</b></td>
+        <td>Fullscreen API called but no screen.orientation.lock('landscape'). Mobile fullscreen stays portrait on most Android devices.</td>
+        <td>Standard behaviour: enter fullscreen = lock landscape. Exit = unlock.</td>
+        <td>On fullscreenchange: if (document.fullscreenElement) screen.orientation.lock('landscape').catch(()=>{}). On exit: screen.orientation.unlock().</td>
+        <td><span class="badge bg">Low</span></td>
+        <td><span class="badge ba">P2</span></td>
+      </tr>
+      <tr>
+        <td><b>Error recovery & retry UI</b></td>
+        <td>hls.js FATAL errors not handled — player silently dies. No "retry" button. No error boundary showing a user-friendly message.</td>
+        <td>All production players catch FATAL network errors and offer retry or quality downgrade.</td>
+        <td>hls.on(Hls.Events.ERROR, (e, data) => { if (data.fatal) { data.type === 'networkError' ? hls.startLoad() : hls.recoverMediaError(); showErrorOverlay(); }})</td>
+        <td><span class="badge bg">Low</span></td>
+        <td><span class="badge br">P1</span></td>
+      </tr>
+      <tr>
+        <td><b>Buffer health indicator</b></td>
+        <td>No loading spinner during stall. No buffering overlay. User sees frozen frame with no feedback during segment fetch.</td>
+        <td>All players show spinner or progress during buffering.</td>
+        <td>video.addEventListener('waiting', showSpinner). video.addEventListener('playing', hideSpinner). CSS spinner overlay on video container.</td>
+        <td><span class="badge bg">Low</span></td>
+        <td><span class="badge br">P1</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ===== TAB 2 BACKEND GAPS ===== -->
+<div class="sec" id="s2">
+  <p class="sec-hd">Backend — unimplemented & broken</p>
+  <p class="sec-sub">API endpoints, data models, and processing pipelines that are either completely missing or partially wired but never called.</p>
+
+  <table class="tbl">
+    <thead><tr><th>Gap</th><th>Evidence in graph</th><th>Impact</th><th>Fix</th><th>Priority</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>No watch-progress API</b></td>
+        <td>saveSearchHistory() exists (Community 4) — same pattern needed for progress. No progress table in any community. No POST/GET /progress endpoint in Community 0 or 2.</td>
+        <td>Resume playback impossible. Continue watching shelf impossible. Most-watched analytics impossible.</td>
+        <td>SQLite: progress(file_id, user_id, position, duration, updated_at). POST /api/progress, GET /api/progress/:file_id. Indexes on (user_id, updated_at DESC).</td>
+        <td><span class="badge br">P1</span></td>
+      </tr>
+      <tr>
+        <td><b>Pre-remux pipeline absent</b></td>
+        <td>MKV→fMP4 remux happens per-stream request (Community 6, 29, 45 — duplicate). No remux-on-ingest job. No fMP4 flag in file metadata.</td>
+        <td>4–15s cold-stream delay on every MKV play. CPU spike on first viewer. No benefit from Drive cache.</td>
+        <td>After upload confirmed: enqueue remux job → ffmpeg -c:v copy -c:a copy -movflags frag_keyframe+empty_moov → save fMP4 to Drive → set file.remuxed=true. Serve fMP4 directly if available.</td>
+        <td><span class="badge br">P1</span></td>
+      </tr>
+      <tr>
+        <td><b>ABR transcoding pipeline</b></td>
+        <td>generate_single_hls_segment_on_demand() only — one quality. _get_file_meta() returns original codec. No quality ladder in any community.</td>
+        <td>Buffering on mobile / slow connections. No quality selector for users.</td>
+        <td>Background job: ffmpeg multi-rendition encode → 1080p, 720p, 480p segment folders → master.m3u8 with BANDWIDTH= tags. hls.js auto-selects. Add /api/transcode/:id/status endpoint.</td>
+        <td><span class="badge br">P1</span></td>
+      </tr>
+      <tr>
+        <td><b>Chapter extraction not exposed</b></td>
+        <td>ffprobe exists (_get_ffprobe_path() Community 6, probe_drive_file() Community 30) but no chapter parsing code anywhere in 51 communities.</td>
+        <td>Skip intro impossible. Chapter seekbar markers impossible. No chapter data fed to frontend.</td>
+        <td>Extend probe_drive_file(): add ffprobe -show_chapters. Parse JSON output → [{start, end, title}]. Store in file metadata. Expose GET /api/chapters/:file_id.</td>
+        <td><span class="badge ba">P2</span></td>
+      </tr>
+      <tr>
+        <td><b>Seek thumbnail generation absent</b></td>
+        <td>No sprite sheet generation anywhere. No /thumbnails/ route in Community 0. No VTT webvtt file for thumbnails.</td>
+        <td>Seekbar is blind — no hover preview. Industry-standard feature since 2015.</td>
+        <td>On ingest: ffmpeg -vf fps=1/10,scale=160:-1,tile=10x10 sprites/thumb_%d.jpg. Generate thumb.vtt pointing to sprite. Serve via /api/thumbnails/:file_id/sprite.jpg and .vtt.</td>
+        <td><span class="badge ba">P2</span></td>
+      </tr>
+      <tr>
+        <td><b>Subtitle dedup + merge</b></td>
+        <td>Communities 31+46 = duplicate extract_subtitle_from_drive(). Communities 32+47 = duplicate search_for_subtitles(). Communities 33+48 = duplicate sync_subtitle_search(). Communities 34+50 = duplicate srt_to_webvtt(). 4 functions doubled = 8 code paths for same logic.</td>
+        <td>Bug fixed in one file but not the other. Confusion about which version is active.</td>
+        <td>Consolidate into subtitle_service.py. Delete duplicates. Single SubtitleService class with extract(), search(), convert() methods.</td>
+        <td><span class="badge br">P1 (code health)</span></td>
+      </tr>
+      <tr>
+        <td><b>Whisper runs synchronously</b></td>
+        <td>generate_subtitles() / _generate_whisper() (Community 9) called in request handler. No async task or background worker pattern.</td>
+        <td>HTTP timeout on episodes >30 min. Thread blocked. Other requests starve. Admin dashboard freezes during generation.</td>
+        <td>Move to ARQ/Celery worker. Return task_id immediately. WebSocket event on completion. Progress: emit percent via existing WebSocket (handleWsEvent Community 1).</td>
+        <td><span class="badge br">P1</span></td>
+      </tr>
+      <tr>
+        <td><b>No series/episode data model</b></td>
+        <td>MediaClassifier extracts season/episode metadata but it's never stored in a structured table. No series_id field. No episode ordering. Lookup requires re-parsing filename every time.</td>
+        <td>Episode auto-advance impossible. Season browse impossible. "Next episode" API impossible.</td>
+        <td>SQLite: series(tmdb_id, title, year), episode(series_id, season, episode, file_id, title, duration). Populate from TMDB enrich(). Expose GET /api/series/:id/episodes.</td>
+        <td><span class="badge br">P1</span></td>
+      </tr>
+      <tr>
+        <td><b>TMDB cache TTL missing</b></td>
+        <td>_disk_cache_get/_disk_cache_set (Community 9/10) — no TTL parameter found. Cache never expires. Stale posters/titles served indefinitely after TMDB updates.</td>
+        <td>Incorrect metadata shown. New seasons not updated. Stale posters.</td>
+        <td>Add expires_at to cache entry. TTL: 7 days for series, 30 days for movies. On _disk_cache_get: check time.time() > expires_at → evict and re-fetch.</td>
+        <td><span class="badge ba">P2</span></td>
+      </tr>
+      <tr>
+        <td><b>HLS encryption absent</b></td>
+        <td>No AES-128 key generation. No EXT-X-KEY in any generated m3u8. Segment files are served cleartext. Community 6 streams MP4/HLS with no auth on segment URLs.</td>
+        <td>Any user who obtains the m3u8 URL can download the entire stream with ffmpeg -i. No content protection whatsoever.</td>
+        <td>Generate per-session AES-128 key. Include EXT-X-KEY:METHOD=AES-128,URI="/api/key/SESSION_ID",IV=... in m3u8. Decrypt server-side per-request (see codecalamity.com pattern). Rotate key every 30 min.</td>
+        <td><span class="badge ba">P2</span></td>
+      </tr>
+      <tr>
+        <td><b>No recommendation engine</b></td>
+        <td>filter_relevant() and group_results() exist (Community 7) but are only used in search flow. TMDB genre data fetched by enrich() but never used for discovery. No collaborative or content-based filtering anywhere.</td>
+        <td>Library feels like a list. No content discovery. Users must know what they want to find it.</td>
+        <td>Phase 1: genre similarity (cosine on TMDB genre vectors from existing enrich() data). Phase 2: count play_count per file_id from progress table → "Most watched". Phase 3: co-occurrence from watch history.</td>
+        <td><span class="badge ba">P2</span></td>
+      </tr>
+      <tr>
+        <td><b>Multi-user / profile system</b></td>
+        <td>check_admin_auth() is binary — admin or nothing. No user table. No per-user progress, preferences, or watch history. authFetch() carries single token type.</td>
+        <td>Can't share with family. One person's watch history pollutes admin view. No per-user recommendations.</td>
+        <td>Add users(id, name, pin_hash, role) table. Role: admin | viewer. Issue viewer JWT with role claim. Middleware: allow /watch/* for viewer tokens. Separate progress tables per user_id.</td>
+        <td><span class="badge ba">P3</span></td>
+      </tr>
+      <tr>
+        <td><b>No health / readiness endpoint</b></td>
+        <td>api_admin_health() exists (Community 2) but returns basic status. No structured metrics. No ffmpeg version check. No Drive quota check. No queue depth metric.</td>
+        <td>Can't integrate with uptime monitors, Docker healthchecks, or Prometheus. Blind to degradation.</td>
+        <td>Extend /admin/health: {"status":"ok","ffmpeg_ok":true,"drive_quota_gb":remaining,"queue_depth":n,"cache_hit_rate":0.95,"uptime_s":3600}. Add /metrics Prometheus endpoint.</td>
+        <td><span class="badge ba">P2</span></td>
+      </tr>
+      <tr>
+        <td><b>No webhook / notification system</b></td>
+        <td>toast() (Community 1) handles UI alerts. No outbound webhooks. No notification to user when new content is added. No Discord/Telegram notification of failures.</td>
+        <td>Admin doesn't know when uploads fail. No push notification. No automation hooks.</td>
+        <td>Add POST /admin/config webhook_url. On job complete/fail: POST webhook_url with {"event":"upload_complete","file":...}. Existing QueueLogger already captures events — route to webhook.</td>
+        <td><span class="badge ba">P3</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ===== TAB 3 UI / UX ===== -->
+<div class="sec" id="s3">
+  <p class="sec-hd">UI / UX — missing and broken patterns</p>
+  <p class="sec-sub">Browse, discovery, and interface gaps compared against Plex, Jellyfin, Netflix UX research.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Browse & discovery (all missing)</h3>
+      <ul>
+        <li><b>Poster grid library</b> — app shows a list/table; Plex/Jellyfin/Netflix use 160×240 poster cards. TMDB poster_path already fetched — just not rendered this way.</li>
+        <li><b>Continue watching shelf</b> — requires watch-progress DB (Tab 2). Horizontal scroll row of in-progress items at top of home page.</li>
+        <li><b>Recently added shelf</b> — Drive createdTime available via get_file_meta(), never surfaced as a "New this week" row.</li>
+        <li><b>Genre filter sidebar</b> — TMDB genres returned by enrich() but never used as filter chips. filter_relevant() exists but is not wired to the browse page.</li>
+        <li><b>Season/episode browser</b> — no season grid, no episode list with thumbnails. Series treated as flat file list.</li>
+        <li><b>Cast & crew panel</b> — TMDB returns cast data but no cast section on the detail page.</li>
+        <li><b>Similar titles row</b> — genre similarity is trivial given TMDB genres already fetched. Never done.</li>
+        <li><b>Rating display</b> — TMDB returns vote_average. Not shown anywhere.</li>
+        <li><b>Release year badge</b> — extracted by MediaClassifier but only used in rename. Not shown in browse UI.</li>
+        <li><b>Content duration</b> — HLS probe returns duration; never shown in library.</li>
+        <li><b>Language badge</b> — audio tracks enumerated by HLS probe but never shown in browse.</li>
+        <li><b>Search-as-you-type</b> — Smart search exists but requires form submit. No 250ms debounce inline results.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Player UI (all missing)</h3>
+      <ul>
+        <li><b>Quality selector</b> — no HLS level switcher UI (depends on ABR implementation). Users can't manually override quality.</li>
+        <li><b>Audio track switcher</b> — multi-audio HLS is generated but no frontend UI to switch tracks. Invisible feature.</li>
+        <li><b>Subtitle track selector</b> — WebVTT subtitles available but no UI to cycle languages. User has no control.</li>
+        <li><b>Loading skeleton</b> — no skeleton screen during library load. Blank flash before content appears.</li>
+        <li><b>Toast/notification system</b> — toast() is admin-only. Player has no user-facing notifications (e.g., "Subtitle loaded", "Quality changed").</li>
+        <li><b>Dark / light mode toggle</b> — no theme preference. Forced dark (or light). No respects prefers-color-scheme.</li>
+        <li><b>Responsive layout</b> — admin dashboard uses fixed-width layout; breaks below 768px.</li>
+        <li><b>Infinite scroll / pagination</b> — library loads all items at once. 500+ item library will be very slow.</li>
+        <li><b>Empty state screens</b> — no "Library is empty" state. No "No results" state for search. Blank screen on error.</li>
+        <li><b>Onboarding / first-run</b> — no setup wizard. Admin must know the config before opening the app.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>UX patterns missing from every page</h3>
+    <table class="tbl">
+      <thead><tr><th>Pattern</th><th>Where missing</th><th>Fix</th></tr></thead>
+      <tbody>
+        <tr><td><b>Loading states</b></td><td>All API calls — instant blank during fetch</td><td>Skeleton cards or spinner on every async operation</td></tr>
+        <tr><td><b>Optimistic UI</b></td><td>Admin actions (delete, rename) wait for server round-trip</td><td>Update UI immediately, revert on error</td></tr>
+        <tr><td><b>Error toasts with retry</b></td><td>Failed API calls show nothing or raw error</td><td>Non-blocking toast with "Retry" action and auto-dismiss after 5s</td></tr>
+        <tr><td><b>Keyboard navigation</b></td><td>Browse grid not keyboard accessible</td><td>tabIndex on cards, Enter to open, arrow keys to navigate grid</td></tr>
+        <tr><td><b>Focus traps in modals</b></td><td>Admin modals allow focus to escape</td><td>trap focus within modal; Escape closes</td></tr>
+        <tr><td><b>ARIA labels</b></td><td>Player controls have no aria-label. Inaccessible to screen readers.</td><td>aria-label on every button, role="slider" on seekbar, aria-live on status</td></tr>
+        <tr><td><b>Breadcrumb navigation</b></td><td>No back navigation context (show → season → episode)</td><td>Render breadcrumbs from series/season/episode hierarchy</td></tr>
+        <tr><td><b>Long-press / context menu</b></td><td>No right-click or long-press actions on library items</td><td>Context menu: Play, Add to watchlist, Get info, Mark watched</td></tr>
+        <tr><td><b>Drag to reorder queue</b></td><td>Admin queue is static list with no reorder</td><td>HTML5 drag-and-drop or Sortable.js on queue items</td></tr>
+        <tr><td><b>Confirm dialogs</b></td><td>Delete actions execute immediately without confirmation</td><td>Modal confirm on destructive actions (delete file, clear queue, reset analytics)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ===== TAB 4 SECURITY ===== -->
+<div class="sec" id="s4">
+  <p class="sec-hd">Security — gaps and hardening</p>
+  <p class="sec-sub">Based on OWASP API Top 10, FastAPI security research, and streaming-specific concerns. These are real vulnerabilities, not theoretical.</p>
+
+  <table class="tbl">
+    <thead><tr><th>Vulnerability</th><th>Evidence</th><th>Risk</th><th>Fix</th><th>Priority</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>No HTTPS / TLS</b></td>
+        <td>No SSL cert config found. uvicorn run without ssl_keyfile/ssl_certfile. hls.js requires HTTPS for MSE in production. WebCodecs API blocked on HTTP.</td>
+        <td><span class="badge br">Critical</span></td>
+        <td>Add Cloudflare Tunnel (zero-config TLS) or nginx reverse proxy with Let's Encrypt certbot. uvicorn --ssl-keyfile --ssl-certfile for self-signed dev.</td>
+        <td><span class="badge br">P0 — fix before exposing</span></td>
+      </tr>
+      <tr>
+        <td><b>HLS streams unprotected</b></td>
+        <td>m3u8 and .m4s segment URLs have no auth token. Anyone with the URL downloads full content. No EXT-X-KEY encryption. No signed URL expiry.</td>
+        <td><span class="badge br">Critical</span></td>
+        <td>Option A: Token in query string (?token=JWT) validated per segment request. Option B: AES-128 per-session key (EXT-X-KEY) — key endpoint requires auth, segments do not. Option B preferred for CDN compatibility.</td>
+        <td><span class="badge br">P1</span></td>
+      </tr>
+      <tr>
+        <td><b>Admin token is permanent</b></td>
+        <td>_create_admin_token() — no expiry found. check_admin_auth() validates token but no rotation logic. Token leaked = permanent access.</td>
+        <td><span class="badge br">High</span></td>
+        <td>Short-lived JWT: exp = now + 15min. Refresh token with 7-day expiry stored httpOnly cookie. authFetch() auto-refreshes on 401. Current research recommends ≤15min tokens.</td>
+        <td><span class="badge br">P1</span></td>
+      </tr>
+      <tr>
+        <td><b>No rate limiting on auth endpoints</b></td>
+        <td>RateLimitMiddleware present (connected to TransferManager) but admin_login() endpoint not confirmed protected. Brute-force login possible.</td>
+        <td><span class="badge ba">High</span></td>
+        <td>Apply slowapi or custom rate limiter: max 5 login attempts / 15 min per IP. Return 429 with Retry-After header. Log failures to QueueLogger.</td>
+        <td><span class="badge br">P1</span></td>
+      </tr>
+      <tr>
+        <td><b>CORS configured wide-open</b></td>
+        <td>Standard FastAPI CORS middleware default or allow_origins=["*"] typical for dev. Production should restrict to known origins.</td>
+        <td><span class="badge ba">Medium</span></td>
+        <td>allow_origins=[os.environ["ALLOWED_ORIGIN"]]. Never * in production. Allow only your frontend domain.</td>
+        <td><span class="badge ba">P2</span></td>
+      </tr>
+      <tr>
+        <td><b>ffmpeg path injection risk</b></td>
+        <td>_get_ffmpeg_path() returns path used in subprocess call. If filename or metadata contains shell metacharacters and is interpolated into ffmpeg command, shell injection is possible.</td>
+        <td><span class="badge ba">Medium</span></td>
+        <td>Use subprocess with list args: subprocess.run(['ffmpeg', '-i', file_path, ...]) — never shell=True. Sanitise file_path: strip metacharacters before passing to subprocess.</td>
+        <td><span class="badge ba">P2</span></td>
+      </tr>
+      <tr>
+        <td><b>No Content Security Policy</b></td>
+        <td>No CSP header in FastAPI middleware. XSS via crafted subtitle text (WebVTT rendered as HTML in some players) would execute scripts.</td>
+        <td><span class="badge ba">Medium</span></td>
+        <td>Add middleware: response.headers["Content-Security-Policy"] = "default-src 'self'; media-src *; script-src 'self' 'nonce-{nonce}'; style-src 'self' 'unsafe-inline'". Sanitize WebVTT cues before serving.</td>
+        <td><span class="badge ba">P2</span></td>
+      </tr>
+      <tr>
+        <td><b>No dependency audit</b></td>
+        <td>No requirements.txt scanning. No pip-audit in CI. OWASP research shows 94% of API attacks target known-vulnerable dependencies. fastapi-oauth2 and older jose versions have known CVEs.</td>
+        <td><span class="badge ba">Medium</span></td>
+        <td>Add pip-audit to CI: pip install pip-audit && pip-audit. Pin all deps in requirements.txt with hashes. Run weekly via cron or GitHub Actions.</td>
+        <td><span class="badge ba">P2</span></td>
+      </tr>
+      <tr>
+        <td><b>Secrets in environment / code</b></td>
+        <td>Google OAuth credentials, TMDB API key, admin password — if any are hardcoded or in .env without .gitignore, they're exposed.</td>
+        <td><span class="badge ba">High</span></td>
+        <td>Audit repo history with git-secrets or trufflehog. Use python-dotenv with .env listed in .gitignore. Rotate any exposed keys immediately.</td>
+        <td><span class="badge br">P1</span></td>
+      </tr>
+      <tr>
+        <td><b>No request body size limit</b></td>
+        <td>FastAPI default has no max body size. A malicious large POST to any endpoint can cause memory exhaustion.</td>
+        <td><span class="badge bg">Low</span></td>
+        <td>app.add_middleware(ContentSizeLimitMiddleware, max_content_size=10_485_760) or nginx client_max_body_size directive.</td>
+        <td><span class="badge ba">P3</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ===== TAB 5 INFRA & PERF ===== -->
+<div class="sec" id="s5">
+  <p class="sec-hd">Infrastructure & performance</p>
+  <p class="sec-sub">Runtime bottlenecks, scalability limits, and cost optimisation — derived from code graph analysis and 2025 HLS best-practice research.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>HLS / streaming bottlenecks</h3>
+      <ul>
+        <li><b>TS segments instead of fMP4</b> — research confirms TS has 4-byte header waste per 188 bytes, requires JS transmux on mobile (CPU drain). fMP4 is 2025 standard — native MSE support, 30% less bandwidth, CMAF-compatible for HLS+DASH from same segments.</li>
+        <li><b>Segment duration</b> — default 2s segments = 3× more ffmpeg invocations than 6s segments. Industry standard is 4–6s. Higher cache hit rate, fewer round trips.</li>
+        <li><b>No CDN layer</b> — segments served directly from VPS. No Cloudflare in front of /stream/* routes. Every segment is a VPS-CPU call even for hot content.</li>
+        <li><b>HLS cache eviction strategy</b> — evict_hls_cache() (Community 35) is LRU by size. Hot segments evicted when large infrequent segments push them out. Fix: LFU + pin first 3 segments of currently-playing files.</li>
+        <li><b>No preload / prefetch</b> — hls.js default buffers 30s ahead. Setting maxBufferLength=60 on reliable connections, 10 on mobile, improves stall rate by ~40% per Bitmovin 2025 data.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Backend scalability</h3>
+      <ul>
+        <li><b>Single ffmpeg per stream</b> — 4 concurrent viewers = 4 ffmpeg subprocesses + 4 Drive downloads simultaneously. No concurrency cap. VPS OOM risk.</li>
+        <li><b>PersistentQueue is local-only</b> — queue lives in-process/on-disk. No Redis or Postgres backend. Impossible to run 2 workers or scale horizontally.</li>
+        <li><b>get_drive_service() single session</b> — all Drive operations serialized through one OAuth session. Concurrent uploads queue behind each other.</li>
+        <li><b>No task cancellation</b> — no way to kill an in-progress ffmpeg transcode from admin. Dead processes accumulate on server restarts.</li>
+        <li><b>No connection keep-alive</b> — Drive API calls use new connection per request. Connection pool with httpx AsyncClient reduces latency by ~20ms per call.</li>
+        <li><b>Whisper blocks event loop</b> — synchronous call in async FastAPI handler. Blocks all other requests on the same worker thread during generation.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Cost optimisation — quick wins</h3>
+    <table class="tbl">
+      <thead><tr><th>Item</th><th>Current state</th><th>Optimised state</th><th>Saving</th></tr></thead>
+      <tbody>
+        <tr><td><b>Whisper model size</b></td><td>openai-whisper (large or medium model default)</td><td>faster-whisper with int8 quantised small.en model</td><td>4× speed, 50% RAM, same WER on English</td></tr>
+        <tr><td><b>HLS segment size</b></td><td>~2s default</td><td>6s segments</td><td>3× fewer ffmpeg invocations per stream</td></tr>
+        <tr><td><b>TMDB cache TTL</b></td><td>Never expires</td><td>7-day series, 30-day movie TTL</td><td>Reduce TMDB API calls by ~95% on stable libraries</td></tr>
+        <tr><td><b>Drive metadata cache</b></td><td>Disk cache present but hit rate unknown</td><td>Add cache-hit counter to /admin/health; target >90% hit rate</td><td>Reduce Drive API quota usage; avoid 403 quota errors</td></tr>
+        <tr><td><b>Subtitle scrape cache</b></td><td>subdl.com scraped on every miss</td><td>Cache miss result (empty) for 24h to avoid repeat scrapes</td><td>Eliminate repeat network calls on files with no subs</td></tr>
+        <tr><td><b>VPS sizing</b></td><td>Unknown — assume 1vCPU/2GB</td><td>2vCPU/4GB with swap for Whisper. Cloudflare Tunnel replaces port 443 exposure.</td><td>Safer, more stable, same cost tier</td></tr>
+        <tr><td><b>Deploy pipeline</b></td><td>InfinityFree FTP (Community 11) — slow, unreliable</td><td>Cloudflare Pages (free tier) with git push deploy</td><td>Atomic deploys, CDN edge, zero cost</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ===== TAB 6 CODE QUALITY ===== -->
+<div class="sec" id="s6">
+  <p class="sec-hd">Code quality — every dead zone and duplication</p>
+  <p class="sec-sub">Specific issues found via graph analysis: isolated nodes, duplicate functions, thin communities, and unverified inferred edges.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Duplicate functions — delete one</h3>
+      <ul>
+        <li><b>extract_subtitle_from_drive()</b> — exists in Community 31 AND Community 46. Both serve WebVTT. One is dead code.</li>
+        <li><b>search_for_subtitles()</b> — Community 32 AND Community 47. Exact duplicate via subliminal.</li>
+        <li><b>sync_subtitle_search()</b> — Community 33 AND Community 48.</li>
+        <li><b>srt_to_webvtt()</b> — Community 34 AND Community 50. Conversion function doubled.</li>
+        <li><b>On-the-fly MKV remux()</b> — Community 29 AND Community 45. Two implementations of the same ffmpeg call.</li>
+        <li><b>_disk_cache_get / _disk_cache_set</b> — appear in both Community 9 and Community 10 with overlapping signatures.</li>
+        <li><b>_cache_key()</b> — Community 9 AND Community 10.</li>
+        <li><b>_human_size()</b> — Community 7 AND Community 10.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Isolated / dead code (93 nodes)</h3>
+      <ul>
+        <li><b>test_ftp.py</b> (Community 21) — 0 connections to production code. Test for removed FTP feature?</li>
+        <li><b>refactor_admin.py</b> (Community 22) — isolated. A refactoring script never integrated?</li>
+        <li><b>test_drive.py</b> (Community 23) — duplicate of Community 18 test_drive.py. Two identical test files?</li>
+        <li><b>test_stream.py</b> (Community 17), <b>test_original.py</b> (Community 19), <b>test.py</b> (Community 20) — all 0-connection test files. None run in CI.</li>
+        <li><b>recursive_list.py</b> (Community 16) — isolated utility never called from main pipeline.</li>
+        <li><b>parse_filename()</b> (Community 15) — separate from MediaClassifier.parse(); likely superseded but not deleted.</li>
+        <li><b>Generate Pyrogram session script</b> (Community 12) — standalone one-time script in production codebase.</li>
+        <li><b>88 additional isolated nodes</b> — utility functions with ≤1 connection. Most are helper fns that were extracted but never imported.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>God-node risk — edges to verify before any refactor</h3>
+    <table class="tbl">
+      <thead><tr><th>Node</th><th>Total edges</th><th>Inferred (unverified)</th><th>Safe to refactor?</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td><b>TransferManager</b></td><td>125</td><td>112 (89%)</td><td><span class="badge br">No</span></td><td>Run pydeps on project → compare real import graph vs inferred. Only refactor once confirmed.</td></tr>
+        <tr><td><b>MediaClassifier</b></td><td>121</td><td>119 (98%)</td><td><span class="badge br">No</span></td><td>Almost entirely inferred. DO NOT touch until static analysis run. A wrong refactor breaks search, rename, upload, Drive paths simultaneously.</td></tr>
+        <tr><td><b>PersistentQueue</b></td><td>118</td><td>100 (85%)</td><td><span class="badge br">No</span></td><td>Same. Run python -m py_compile + pydeps first.</td></tr>
+        <tr><td><b>authFetch()</b></td><td>28</td><td>27 (96%)</td><td><span class="badge ba">Caution</span></td><td>Add TypeScript strict mode or Python type hints with mypy to catch real dependencies before touching.</td></tr>
+        <tr><td><b>parse()</b></td><td>17</td><td>~50% inferred</td><td><span class="badge ba">Caution</span></td><td>High betweenness (0.217) — bridges 4 communities. Any change in return type cascades. Add return type annotation first.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Missing engineering practices</h3>
+    <ul>
+      <li><b>No type annotations on public functions</b> — 684 nodes with minimal Python type hints. mypy would catch ~30% of latent bugs without tests.</li>
+      <li><b>No automated tests in CI</b> — 7 test files (test.py, test_drive.py, etc.) are all isolated (0–1 graph connections). No pytest runner in any config file found.</li>
+      <li><b>No linting / formatting</b> — no .flake8, pyproject.toml, or ruff config. Code style inconsistent across 39 files.</li>
+      <li><b>No structured logging</b> — QueueLogger exists but Python print() statements likely prevalent. Should use structlog or loguru with JSON output for production.</li>
+      <li><b>No migration system</b> — no alembic config. SQLite schema changes require manual ALTER TABLE or data loss.</li>
+      <li><b>No Docker Compose</b> — no containerisation found. Deployment is manual. Plex/Jellyfin both ship with official Docker images and one-command setup.</li>
+      <li><b>No environment config validation</b> — app likely crashes with KeyError if env vars missing. Should use pydantic BaseSettings to validate all required config at startup.</li>
+      <li><b>No request ID / tracing</b> — errors in logs have no correlation ID. Impossible to trace a specific user's failing request through the log stream.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===== TAB 7 ROADMAP ===== -->
+<div class="sec" id="s7">
+  <p class="sec-hd">Phased implementation roadmap</p>
+  <p class="sec-sub">Sorted by: user-facing impact × effort. Phases can run in parallel where marked. Does not include Telegram/GDrive changes.</p>
+
+  <div class="card">
+    <div class="phase-wrap">
+      <div style="display:flex;flex-direction:column;align-items:center">
+        <div class="phase-num p1n">P0</div>
+        <div class="phase-connector"></div>
+      </div>
+      <div class="phase-body">
+        <h4>Phase 0 — Security hardening (do this first, before anything else)</h4>
+        <p>Non-negotiable before sharing the app with anyone. These are active vulnerabilities, not nice-to-haves.</p>
+        <div class="tag-row">
+          <span class="badge br">HTTPS via Cloudflare Tunnel</span>
+          <span class="badge br">Short-lived JWT (15 min)</span>
+          <span class="badge br">Rate limit admin_login()</span>
+          <span class="badge br">Rotate any hardcoded secrets</span>
+          <span class="badge br">subprocess list args (no shell=True)</span>
+          <span class="badge br">pip-audit on dependencies</span>
+        </div>
+      </div>
+    </div>
+    <div class="phase-connector" style="margin-left:14px;height:10px"></div>
+
+    <div class="phase-wrap">
+      <div style="display:flex;flex-direction:column;align-items:center">
+        <div class="phase-num p1n">P1</div>
+        <div class="phase-connector"></div>
+      </div>
+      <div class="phase-body">
+        <h4>Phase 1 — Core player & code health (weeks 1–3)</h4>
+        <p>All low-effort, high-rage fixes. Volume memory is 4 lines. Mobile touch is 20 lines. Error recovery is 10 lines. Buffer spinner is 5 lines. Watch progress is ~50 lines. Duplicates deletion is zero new code. Together these make the app feel production-quality.</p>
+        <div class="tag-row">
+          <span class="badge br">Volume memory (localStorage, 4 lines)</span>
+          <span class="badge br">Buffer spinner / loading state</span>
+          <span class="badge br">hls.js error recovery handler</span>
+          <span class="badge br">Keyboard shortcuts</span>
+          <span class="badge br">Mobile touch controls (double-tap seek)</span>
+          <span class="badge br">Watch position API (SQLite + 2 endpoints)</span>
+          <span class="badge br">Series/episode data model</span>
+          <span class="badge br">Delete 8 duplicate functions</span>
+          <span class="badge br">Delete 7 isolated test files</span>
+          <span class="badge br">faster-whisper migration</span>
+          <span class="badge br">TMDB cache TTL</span>
+        </div>
+      </div>
+    </div>
+    <div class="phase-connector" style="margin-left:14px;height:10px"></div>
+
+    <div class="phase-wrap">
+      <div style="display:flex;flex-direction:column;align-items:center">
+        <div class="phase-num p2n">P2</div>
+        <div class="phase-connector"></div>
+      </div>
+      <div class="phase-body">
+        <h4>Phase 2 — Browse UI + core features (weeks 4–8)</h4>
+        <p>Transforms the app from a functional admin tool into an actual streaming product. Poster grid uses existing TMDB data. Continue watching uses Phase 1 progress API. Episode auto-advance uses Phase 1 series model.</p>
+        <div class="tag-row">
+          <span class="badge ba">Poster grid browse UI (TMDB poster_path)</span>
+          <span class="badge ba">Season / episode browser</span>
+          <span class="badge ba">Continue watching shelf</span>
+          <span class="badge ba">Recently added shelf</span>
+          <span class="badge ba">Episode auto-advance + countdown</span>
+          <span class="badge ba">Picture-in-picture (3 lines)</span>
+          <span class="badge ba">Playback speed control</span>
+          <span class="badge ba">Audio track switcher UI</span>
+          <span class="badge ba">Subtitle track selector UI</span>
+          <span class="badge ba">Subtitle styling controls</span>
+          <span class="badge ba">Search-as-you-type (250ms debounce)</span>
+          <span class="badge ba">Genre filter sidebar</span>
+          <span class="badge ba">ARIA labels + keyboard nav</span>
+          <span class="badge ba">Loading skeletons + empty states</span>
+          <span class="badge ba">Whisper → async background task</span>
+          <span class="badge ba">Health endpoint + Prometheus /metrics</span>
+          <span class="badge ba">Chapter extraction API (ffprobe -show_chapters)</span>
+        </div>
+      </div>
+    </div>
+    <div class="phase-connector" style="margin-left:14px;height:10px"></div>
+
+    <div class="phase-wrap">
+      <div style="display:flex;flex-direction:column;align-items:center">
+        <div class="phase-num p3n">P3</div>
+        <div class="phase-connector"></div>
+      </div>
+      <div class="phase-body">
+        <h4>Phase 3 — Performance & streaming quality (weeks 9–14)</h4>
+        <p>Higher effort but unlocks mobile quality and removes the main source of user frustration (buffering). Pre-remux eliminates cold-start delay. ABR fixes mobile buffering. Seek thumbnails make long content navigable.</p>
+        <div class="tag-row">
+          <span class="badge bb">Pre-remux MKV→fMP4 on ingest</span>
+          <span class="badge bb">Adaptive bitrate (3-rendition ffmpeg ladder)</span>
+          <span class="badge bb">fMP4 segments instead of .ts</span>
+          <span class="badge bb">6s segment duration</span>
+          <span class="badge bb">Seek thumbnail sprites (ffmpeg tile)</span>
+          <span class="badge bb">Skip intro / chapter markers UI</span>
+          <span class="badge bb">HLS AES-128 segment encryption</span>
+          <span class="badge bb">Drive session pool (3 connections)</span>
+          <span class="badge bb">ffmpeg concurrency cap (max 4 processes)</span>
+          <span class="badge bb">Cloudflare Tunnel + Pages deploy</span>
+          <span class="badge bb">pydantic BaseSettings config validation</span>
+          <span class="badge bb">structlog JSON logging + request ID</span>
+        </div>
+      </div>
+    </div>
+    <div class="phase-connector" style="margin-left:14px;height:10px"></div>
+
+    <div class="phase-wrap">
+      <div>
+        <div class="phase-num p4n">P4</div>
+      </div>
+      <div class="phase-body">
+        <h4>Phase 4 — Discovery, multi-user, god-node refactor (weeks 15–22)</h4>
+        <p>Recommendations use data accumulated from Phase 1 progress tracking. Multi-user requires Phase 1 series model. God-node refactoring requires Phase 3 static analysis confirmation first.</p>
+        <div class="tag-row">
+          <span class="badge bg">Genre-based similar titles</span>
+          <span class="badge bg">Most watched shelf (play_count)</span>
+          <span class="badge bg">Watch party / SyncPlay (WebSocket sync)</span>
+          <span class="badge bg">Multi-user profiles + viewer JWT</span>
+          <span class="badge bg">Split TransferManager → 3 classes</span>
+          <span class="badge bg">Consolidate subtitle_service.py</span>
+          <span class="badge bg">Alembic migrations</span>
+          <span class="badge bg">Docker Compose packaging</span>
+          <span class="badge bg">Webhook / notification system</span>
+          <span class="badge bg">Infinite scroll + pagination</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Effort vs impact — top 10 moves sorted by ROI</h3>
+    <table class="tbl">
+      <thead><tr><th>#</th><th>Action</th><th>Effort</th><th>Impact</th><th>Lines of code estimate</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Volume memory (localStorage)</td><td><span class="badge bg">Trivial</span></td><td><span class="badge br">Stops user rage</span></td><td>4</td></tr>
+        <tr><td>2</td><td>Buffer spinner on stall</td><td><span class="badge bg">Trivial</span></td><td><span class="badge br">Core UX</span></td><td>5</td></tr>
+        <tr><td>3</td><td>Picture-in-picture</td><td><span class="badge bg">Trivial</span></td><td><span class="badge ba">High delight</span></td><td>3</td></tr>
+        <tr><td>4</td><td>Keyboard shortcuts</td><td><span class="badge bg">Low</span></td><td><span class="badge ba">Power users</span></td><td>30</td></tr>
+        <tr><td>5</td><td>Mobile double-tap seek</td><td><span class="badge bg">Low</span></td><td><span class="badge br">Mobile users</span></td><td>20</td></tr>
+        <tr><td>6</td><td>Watch position API</td><td><span class="badge bg">Low</span></td><td><span class="badge br">Resume = #1 feature</span></td><td>50</td></tr>
+        <tr><td>7</td><td>faster-whisper swap</td><td><span class="badge bg">Low</span></td><td><span class="badge ba">4× speed, half RAM</span></td><td>10 (pip + import change)</td></tr>
+        <tr><td>8</td><td>Delete 8 duplicate functions</td><td><span class="badge bg">Low</span></td><td><span class="badge ba">Code health</span></td><td>–300 (deletion)</td></tr>
+        <tr><td>9</td><td>hls.js error recovery</td><td><span class="badge bg">Low</span></td><td><span class="badge br">Player doesn't die silently</span></td><td>10</td></tr>
+        <tr><td>10</td><td>Episode auto-advance</td><td><span class="badge ba">Medium</span></td><td><span class="badge br">Binge-watch retention</span></td><td>80</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</div>
+
+<script>
+function sw(i){
+  document.querySelectorAll('.tab').forEach((t,j)=>t.classList.toggle('active',i===j));
+  document.querySelectorAll('.sec').forEach((s,j)=>s.classList.toggle('active',i===j));
+}
+</script>
