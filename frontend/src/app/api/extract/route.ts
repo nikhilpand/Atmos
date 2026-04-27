@@ -22,7 +22,7 @@ export const maxDuration = 30;
 // ─── Extractor microservice URL ───────────────────────────────────────
 // Points to the atmos-extractor Hugging Face Space
 const EXTRACTOR_BASE = process.env.NEXT_PUBLIC_EXTRACTOR_URL
-  || 'https://nkp9450732628-atmos-extractor.hf.space';
+  || 'https://nikhil1776-atmos-extractor.hf.space';
 
 // ─── Types ───────────────────────────────────────────────────────────
 interface ExtractedStream {
