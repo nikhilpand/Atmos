@@ -674,3 +674,346 @@ async def extract_direct(
         "stream": result,
         "extractionTimeMs": int((time.time() - start) * 1000),
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# TORRENT STREAMING ENGINE
+# ═══════════════════════════════════════════════════════════════════════
+# Accepts a magnet link → downloads server-side via libtorrent →
+# streams the video file over HTTP with Range support so any browser/device
+# can download directly. No torrent client needed on the user's device.
+# ═══════════════════════════════════════════════════════════════════════
+
+import tempfile
+import threading
+import mimetypes
+from pathlib import Path
+from fastapi import Request
+from fastapi.responses import StreamingResponse, Response
+import asyncio
+
+try:
+    import libtorrent as lt
+    HAS_LIBTORRENT = True
+    print("[Torrent] libtorrent available ✓")
+except ImportError:
+    HAS_LIBTORRENT = False
+    print("[Torrent] WARNING: libtorrent not available")
+
+# ─── Torrent session singleton ────────────────────────────────────────
+_torrent_session: "lt.session | None" = None
+_torrent_handles: dict = {}   # magnet_hash → {handle, save_path, status}
+_torrent_lock = threading.Lock()
+
+VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".flv"}
+
+
+def _get_torrent_session() -> "lt.session":
+    global _torrent_session
+    if _torrent_session is None:
+        settings = lt.settings_pack()
+        settings[lt.settings_pack.alert_mask] = (
+            lt.alert.category_t.error_notification
+            | lt.alert.category_t.piece_progress_notification
+            | lt.alert.category_t.status_notification
+        )
+        # Use a random port range so HF Spaces firewall doesn't block
+        settings[lt.settings_pack.listen_interfaces] = "0.0.0.0:6881"
+        settings[lt.settings_pack.download_rate_limit] = 0   # unlimited
+        settings[lt.settings_pack.upload_rate_limit] = 1024  # 1KB/s upload only
+        _torrent_session = lt.session(settings)
+    return _torrent_session
+
+
+def _magnet_to_hash(magnet: str) -> str:
+    """Extract the info-hash from a magnet link."""
+    import re
+    m = re.search(r"urn:btih:([a-fA-F0-9]{40}|[A-Z2-7]{32})", magnet, re.IGNORECASE)
+    if m:
+        return m.group(1).lower()
+    # Fallback: use a hash of the magnet string itself
+    import hashlib
+    return hashlib.sha1(magnet.encode()).hexdigest()
+
+
+def _find_largest_video(save_path: str) -> Path | None:
+    """Find the largest video file in the torrent download directory."""
+    best: Path | None = None
+    best_size = 0
+    for f in Path(save_path).rglob("*"):
+        if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS:
+            sz = f.stat().st_size
+            if sz > best_size:
+                best_size = sz
+                best = f
+    return best
+
+
+def _add_torrent(magnet: str, save_path: str) -> "lt.torrent_handle":
+    """Add a magnet to the session and configure sequential+prioritised download."""
+    session = _get_torrent_session()
+    params = lt.parse_magnet_uri(magnet)
+    params.save_path = save_path
+    # Sequential download so the beginning of the file is available quickly
+    params.flags |= lt.torrent_flags.sequential_download
+    handle = session.add_torrent(params)
+    # After metadata, prioritise the first and last pieces for seek support
+    return handle
+
+
+def _wait_for_metadata(handle: "lt.torrent_handle", timeout: float = 30.0) -> bool:
+    """Block until torrent metadata is available (so we know the file list)."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if handle.status().has_metadata:
+            return True
+        time.sleep(0.5)
+    return False
+
+
+# ─── Routes ──────────────────────────────────────────────────────────
+
+@app.get("/torrent/info")
+async def torrent_info(magnet: str = Query(...)):
+    """
+    Fetch torrent metadata (file list + sizes) without downloading.
+    Returns files within ~20s using the torrent metadata protocol.
+    """
+    if not HAS_LIBTORRENT:
+        raise HTTPException(503, "libtorrent not available on this server")
+    if not magnet.startswith("magnet:"):
+        raise HTTPException(400, "Must be a magnet: URI")
+
+    mag_hash = _magnet_to_hash(magnet)
+
+    # Check if we already have metadata cached
+    with _torrent_lock:
+        if mag_hash in _torrent_handles:
+            entry = _torrent_handles[mag_hash]
+            handle = entry["handle"]
+            if handle.status().has_metadata:
+                ti = handle.torrent_file()
+                files = []
+                for i in range(ti.num_files()):
+                    f = ti.files()
+                    files.append({
+                        "index": i,
+                        "path": f.file_path(i),
+                        "size": f.file_size(i),
+                        "isVideo": Path(f.file_path(i)).suffix.lower() in VIDEO_EXTENSIONS,
+                    })
+                return {"success": True, "name": ti.name(), "files": files, "totalSize": ti.total_size()}
+
+    # Add to session to fetch metadata
+    with tempfile.TemporaryDirectory(prefix=f"atmos_{mag_hash}_") as tmp:
+        handle = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: _add_torrent(magnet, tmp)
+        )
+        has_meta = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: _wait_for_metadata(handle, timeout=25)
+        )
+        if not has_meta:
+            raise HTTPException(408, "Timed out fetching torrent metadata")
+
+        ti = handle.torrent_file()
+        files = []
+        for i in range(ti.num_files()):
+            f = ti.files()
+            files.append({
+                "index": i,
+                "path": f.file_path(i),
+                "size": f.file_size(i),
+                "isVideo": Path(f.file_path(i)).suffix.lower() in VIDEO_EXTENSIONS,
+            })
+        return {"success": True, "name": ti.name(), "files": files, "totalSize": ti.total_size()}
+
+
+@app.get("/torrent/status")
+async def torrent_status(magnet: str = Query(...)):
+    """Poll download progress for an active torrent."""
+    if not HAS_LIBTORRENT:
+        raise HTTPException(503, "libtorrent not available")
+
+    mag_hash = _magnet_to_hash(magnet)
+    with _torrent_lock:
+        entry = _torrent_handles.get(mag_hash)
+    if not entry:
+        return {"active": False, "progress": 0}
+
+    handle = entry["handle"]
+    s = handle.status()
+    return {
+        "active": True,
+        "progress": round(s.progress * 100, 1),
+        "downloadRate": s.download_rate,    # bytes/sec
+        "uploadRate": s.upload_rate,
+        "numPeers": s.num_peers,
+        "numSeeds": s.num_seeds,
+        "state": str(s.state),
+        "hasMetadata": s.has_metadata,
+        "videoFile": entry.get("video_path"),
+    }
+
+
+@app.get("/torrent/stream")
+async def torrent_stream(
+    request: Request,
+    magnet: str = Query(...),
+    filename: str = Query("video.mp4"),
+):
+    """
+    Stream the largest video file from a torrent directly over HTTP.
+    Supports HTTP Range requests so browsers/players can seek.
+    
+    Flow:
+      1. Add magnet to libtorrent session (sequential download mode)
+      2. Wait for metadata + enough pieces to start streaming
+      3. Stream raw bytes with Range support — browser downloads directly
+      4. Cleanup temp dir after streaming completes
+    """
+    if not HAS_LIBTORRENT:
+        raise HTTPException(503, "libtorrent not available on this server. Please use the magnet link directly.")
+    if not magnet.startswith("magnet:"):
+        raise HTTPException(400, "Must be a magnet: URI")
+
+    mag_hash = _magnet_to_hash(magnet)
+
+    # ── Persistent temp dir per torrent (survives multiple Range requests) ──
+    with _torrent_lock:
+        if mag_hash not in _torrent_handles:
+            save_path = tempfile.mkdtemp(prefix=f"atmos_{mag_hash}_")
+            handle = _add_torrent(magnet, save_path)
+            _torrent_handles[mag_hash] = {
+                "handle": handle,
+                "save_path": save_path,
+                "video_path": None,
+            }
+        entry = _torrent_handles[mag_hash]
+
+    handle: "lt.torrent_handle" = entry["handle"]
+
+    # ── Wait for metadata ──
+    has_meta = await asyncio.get_event_loop().run_in_executor(
+        None, lambda: _wait_for_metadata(handle, timeout=30)
+    )
+    if not has_meta:
+        raise HTTPException(408, "Timed out fetching torrent metadata (30s). Try again.")
+
+    # ── Locate the video file ──
+    video_path = entry.get("video_path")
+    if not video_path:
+        video_path = _find_largest_video(entry["save_path"])
+        if not video_path:
+            # Try waiting a moment for the file to appear
+            await asyncio.sleep(3)
+            video_path = _find_largest_video(entry["save_path"])
+        if not video_path:
+            raise HTTPException(404, "No video file found in torrent")
+        with _torrent_lock:
+            entry["video_path"] = str(video_path)
+        video_path = Path(video_path)
+    else:
+        video_path = Path(video_path)
+
+    # ── Wait for at least 2MB of the file to download ──
+    WAIT_THRESHOLD = 2 * 1024 * 1024  # 2MB
+    wait_start = time.time()
+    while time.time() - wait_start < 60:
+        if video_path.exists() and video_path.stat().st_size >= WAIT_THRESHOLD:
+            break
+        await asyncio.sleep(1)
+
+    if not video_path.exists():
+        raise HTTPException(503, "Torrent download not started yet, retry in a few seconds")
+
+    file_size = video_path.stat().st_size
+    content_type = mimetypes.guess_type(str(video_path))[0] or "application/octet-stream"
+
+    # ── HTTP Range support ──
+    range_header = request.headers.get("range")
+    start_byte = 0
+    end_byte = file_size - 1
+
+    if range_header:
+        try:
+            range_val = range_header.strip().replace("bytes=", "")
+            parts = range_val.split("-")
+            start_byte = int(parts[0]) if parts[0] else 0
+            end_byte = int(parts[1]) if parts[1] else file_size - 1
+        except (ValueError, IndexError):
+            start_byte = 0
+            end_byte = file_size - 1
+
+    chunk_size = end_byte - start_byte + 1
+
+    def file_iterator(path: Path, start: int, length: int, chunk: int = 1024 * 256):
+        """Read the file in chunks, waiting for pieces to download if needed."""
+        remaining = length
+        with open(path, "rb") as f:
+            f.seek(start)
+            while remaining > 0:
+                to_read = min(chunk, remaining)
+                current_pos = f.tell()
+                # Wait if torrent hasn't downloaded this piece yet
+                wait_deadline = time.time() + 30
+                while time.time() < wait_deadline:
+                    if path.stat().st_size > current_pos:
+                        break
+                    time.sleep(0.5)
+                data = f.read(to_read)
+                if not data:
+                    break
+                remaining -= len(data)
+                yield data
+
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(chunk_size),
+        "Cache-Control": "no-cache",
+    }
+
+    if range_header:
+        headers["Content-Range"] = f"bytes {start_byte}-{end_byte}/{file_size}"
+        return StreamingResponse(
+            file_iterator(video_path, start_byte, chunk_size),
+            status_code=206,
+            media_type=content_type,
+            headers=headers,
+        )
+
+    return StreamingResponse(
+        file_iterator(video_path, 0, file_size),
+        status_code=200,
+        media_type=content_type,
+        headers=headers,
+    )
+
+
+@app.delete("/torrent/cleanup")
+async def torrent_cleanup(magnet: str = Query(...)):
+    """Remove a torrent and delete its temp files to free space."""
+    if not HAS_LIBTORRENT:
+        return {"success": False, "error": "libtorrent not available"}
+
+    mag_hash = _magnet_to_hash(magnet)
+    with _torrent_lock:
+        entry = _torrent_handles.pop(mag_hash, None)
+
+    if not entry:
+        return {"success": False, "error": "Torrent not found"}
+
+    session = _get_torrent_session()
+    try:
+        session.remove_torrent(entry["handle"], lt.options_t.delete_files)
+    except Exception:
+        pass
+
+    try:
+        import shutil
+        shutil.rmtree(entry["save_path"], ignore_errors=True)
+    except Exception:
+        pass
+
+    return {"success": True}
+

@@ -192,14 +192,13 @@ export default function IframePlayer({
 
   return (
     <div className="relative w-full h-full bg-black">
-      {/* Main iframe — sandboxed to prevent ad pop-ups, XSS, clipboard theft */}
+      {/* Main iframe */}
       <iframe
         ref={iframeRef}
         key={activeProviderId}
         src={activeUrl}
         className="absolute inset-0 w-full h-full border-none z-10"
         allowFullScreen
-        sandbox="allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock"
         allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen"
         referrerPolicy="no-referrer"
         onLoad={handleIframeLoad}
@@ -212,7 +211,6 @@ export default function IframePlayer({
         <iframe
           src={nextProvider.url}
           className="absolute w-0 h-0 border-none opacity-0 pointer-events-none"
-          sandbox="allow-scripts allow-same-origin"
           tabIndex={-1}
           aria-hidden="true"
           title="Preload next server"

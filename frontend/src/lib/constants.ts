@@ -6,6 +6,8 @@ export const CONTROL_URL = process.env.NEXT_PUBLIC_CONTROL_URL || "https://nikhi
 export const MEDIA_URL = process.env.NEXT_PUBLIC_MEDIA_URL || "https://nikhil1776-atmos-media.hf.space";
 export const META_URL = process.env.NEXT_PUBLIC_META_URL || "https://nikhil1776-atmos-meta.hf.space";
 export const SUBS_URL = process.env.NEXT_PUBLIC_SUBS_URL || "https://nikhil1776-atmos-subs.hf.space";
+export const EXTRACTOR_URL = process.env.NEXT_PUBLIC_EXTRACTOR_URL || "https://nikhil1776-atmos-extractor.hf.space";
+
 
 // ─── TMDB Configuration ────────────────────────────────────────────
 // Server-only: TMDB_API_KEY must NOT have NEXT_PUBLIC_ prefix in production.

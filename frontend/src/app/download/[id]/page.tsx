@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchTitle, type Episode, type Season } from '@/lib/api';
-import { TMDB_IMAGE_BASE } from '@/lib/constants';
+import { TMDB_IMAGE_BASE, EXTRACTOR_URL } from '@/lib/constants';
 
 // ─── Types ──────────────────────────────────────────────────────────
 interface ExtractedStream {
@@ -55,7 +55,6 @@ function estimateSize(quality: string, durationMin?: number): string {
 // ─── Download handler ───────────────────────────────────────────────
 function triggerDownload(url: string, filename: string) {
   if (url.startsWith('magnet:')) {
-    // Magnet links open the user's torrent client
     window.open(url, '_self');
     return;
   }
@@ -67,6 +66,18 @@ function triggerDownload(url: string, filename: string) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+}
+
+// ─── Server Download: route magnet through HF Space ─────────────────
+// The HF Space downloads via libtorrent and streams the file over HTTP,
+// so any device (mobile, tablet, smart TV) gets a direct download
+// without needing a torrent client installed.
+function buildServerStreamUrl(magnet: string, filename: string): string {
+  const params = new URLSearchParams({
+    magnet,
+    filename,
+  });
+  return `${EXTRACTOR_URL}/torrent/stream?${params.toString()}`;
 }
 
 // ─── Stream Card Component ──────────────────────────────────────────
@@ -82,7 +93,9 @@ function StreamCard({ stream, title, type, season, episode, year, runtime }: {
   const filename = buildFileName(title, type, season, episode, stream.quality, year);
   const isMagnet = stream.type === 'magnet' || stream.type === 'torrent';
   const size = stream.size || estimateSize(stream.quality, runtime);
-  
+  const [serverDownloading, setServerDownloading] = React.useState(false);
+  const [serverProgress, setServerProgress] = React.useState<number | null>(null);
+
   const qualityColor = stream.quality.includes('2160') || stream.quality.includes('4k') ? 'text-fuchsia-400 bg-fuchsia-500/15 border-fuchsia-500/20'
     : stream.quality.includes('1080') ? 'text-emerald-400 bg-emerald-500/15 border-emerald-500/20'
     : stream.quality.includes('720') ? 'text-blue-400 bg-blue-500/15 border-blue-500/20'
@@ -93,74 +106,161 @@ function StreamCard({ stream, title, type, season, episode, year, runtime }: {
     ? 'text-green-400/80'
     : 'text-cyan-400/60';
 
+  // Start server-side download and poll progress
+  const handleServerDownload = React.useCallback(async () => {
+    if (serverDownloading) return;
+    setServerDownloading(true);
+    setServerProgress(0);
+
+    // Kick off the download in the browser — the browser will receive
+    // the streaming response from the HF Space directly
+    const streamUrl = buildServerStreamUrl(stream.url, filename);
+    const a = document.createElement('a');
+    a.href = streamUrl;
+    a.download = filename;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    // Poll progress from HF Space
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch(
+          `${EXTRACTOR_URL}/torrent/status?magnet=${encodeURIComponent(stream.url)}`
+        );
+        const data = await res.json();
+        if (data.active) {
+          setServerProgress(data.progress);
+          if (data.progress >= 100) {
+            clearInterval(pollInterval);
+            setServerDownloading(false);
+          }
+        } else {
+          // Not yet registered — still waiting for metadata
+          setServerProgress(prev => (prev ?? 0) < 5 ? (prev ?? 0) + 1 : prev);
+        }
+      } catch {
+        // ignore polling errors
+      }
+    }, 2000);
+
+    // Stop polling after 2 hours max
+    setTimeout(() => {
+      clearInterval(pollInterval);
+      setServerDownloading(false);
+    }, 2 * 60 * 60 * 1000);
+  }, [stream.url, filename, serverDownloading]);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`group flex items-center justify-between gap-4 p-4 rounded-2xl border transition-all ${
+      className={`group flex flex-col gap-3 p-4 rounded-2xl border transition-all ${
         isMagnet
           ? 'bg-green-500/[0.03] border-green-500/[0.08] hover:bg-green-500/[0.06] hover:border-green-500/15'
           : 'bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06] hover:border-white/10'
       }`}
     >
-      <div className="flex items-center gap-3 min-w-0 flex-1">
-        {isMagnet ? (
-          <ExternalLink size={18} className="text-green-400/40 flex-shrink-0" />
-        ) : (
-          <FileVideo size={18} className="text-white/30 flex-shrink-0" />
-        )}
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className={`px-2 py-0.5 rounded-lg text-xs font-bold border ${qualityColor}`}>
-              {stream.quality.toUpperCase()}
-            </span>
-            <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${isMagnet ? 'text-green-400/70 bg-green-500/10' : 'text-white/30'}`}>
-              {isMagnet ? 'MAGNET' : stream.type.toUpperCase()}
-            </span>
-            <span className="text-white/20 text-xs">·</span>
-            <span className="text-white/40 text-xs flex items-center gap-1">
-              <HardDrive size={10} /> {size}
-            </span>
-            <span className="text-white/20 text-xs">·</span>
-            <span className={`text-xs flex items-center gap-1 ${providerColor}`}>
-              <Server size={10} /> {stream.provider}
-            </span>
-            {/* Seeds/Peers for torrents */}
-            {isMagnet && stream.seeds !== undefined && (
-              <>
-                <span className="text-white/20 text-xs">·</span>
-                <span className="text-green-400/70 text-xs flex items-center gap-0.5">
-                  <ArrowUpCircle size={9} /> {stream.seeds}
-                </span>
-                <span className="text-red-400/50 text-xs flex items-center gap-0.5">
-                  <ArrowDownCircle size={9} /> {stream.peers ?? 0}
-                </span>
-              </>
-            )}
-            {stream.captions && stream.captions.length > 0 && (
-              <>
-                <span className="text-white/20 text-xs">·</span>
-                <span className="text-white/40 text-xs flex items-center gap-1">
-                  <Globe size={10} /> {stream.captions.length} sub{stream.captions.length > 1 ? 's' : ''}
-                </span>
-              </>
-            )}
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          {isMagnet ? (
+            <ExternalLink size={18} className="text-green-400/40 flex-shrink-0" />
+          ) : (
+            <FileVideo size={18} className="text-white/30 flex-shrink-0" />
+          )}
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`px-2 py-0.5 rounded-lg text-xs font-bold border ${qualityColor}`}>
+                {stream.quality.toUpperCase()}
+              </span>
+              <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${isMagnet ? 'text-green-400/70 bg-green-500/10' : 'text-white/30'}`}>
+                {isMagnet ? 'TORRENT' : stream.type.toUpperCase()}
+              </span>
+              <span className="text-white/20 text-xs">·</span>
+              <span className="text-white/40 text-xs flex items-center gap-1">
+                <HardDrive size={10} /> {size}
+              </span>
+              <span className="text-white/20 text-xs">·</span>
+              <span className={`text-xs flex items-center gap-1 ${providerColor}`}>
+                <Server size={10} /> {stream.provider}
+              </span>
+              {isMagnet && stream.seeds !== undefined && (
+                <>
+                  <span className="text-white/20 text-xs">·</span>
+                  <span className="text-green-400/70 text-xs flex items-center gap-0.5">
+                    <ArrowUpCircle size={9} /> {stream.seeds}
+                  </span>
+                  <span className="text-red-400/50 text-xs flex items-center gap-0.5">
+                    <ArrowDownCircle size={9} /> {stream.peers ?? 0}
+                  </span>
+                </>
+              )}
+              {stream.captions && stream.captions.length > 0 && (
+                <>
+                  <span className="text-white/20 text-xs">·</span>
+                  <span className="text-white/40 text-xs flex items-center gap-1">
+                    <Globe size={10} /> {stream.captions.length} sub{stream.captions.length > 1 ? 's' : ''}
+                  </span>
+                </>
+              )}
+            </div>
+            <p className="text-white/25 text-[10px] mt-1 truncate font-mono">{filename}</p>
           </div>
-          <p className="text-white/25 text-[10px] mt-1 truncate font-mono">{filename}</p>
         </div>
+
+        {/* Action buttons */}
+        {isMagnet ? (
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Server Download — goes through HF Space, works on all devices */}
+            <button
+              onClick={handleServerDownload}
+              disabled={serverDownloading}
+              title="Download via server — no torrent client needed"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all shadow-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-60 text-white shadow-violet-600/20 hover:shadow-violet-500/30"
+            >
+              {serverDownloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              <span className="hidden sm:inline">
+                {serverDownloading ? `Server ${serverProgress !== null ? serverProgress.toFixed(0) + '%' : '…'}` : 'Server DL'}
+              </span>
+            </button>
+            {/* Fallback: open local torrent client */}
+            <button
+              onClick={() => window.open(stream.url, '_self')}
+              title="Open in local torrent client"
+              className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all border border-green-500/30 text-green-400 hover:bg-green-500/10"
+            >
+              <Magnet size={14} />
+              <span className="hidden sm:inline">Magnet</span>
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => triggerDownload(stream.url, filename)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all flex-shrink-0 shadow-lg bg-violet-600 hover:bg-violet-500 text-white shadow-violet-600/20 hover:shadow-violet-500/30"
+          >
+            <Download size={14} />
+            <span className="hidden sm:inline">Download</span>
+          </button>
+        )}
       </div>
 
-      <button
-        onClick={() => triggerDownload(stream.url, filename)}
-        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all flex-shrink-0 shadow-lg ${
-          isMagnet
-            ? 'bg-green-600 hover:bg-green-500 text-white shadow-green-600/20 hover:shadow-green-500/30'
-            : 'bg-violet-600 hover:bg-violet-500 text-white shadow-violet-600/20 hover:shadow-violet-500/30'
-        }`}
-      >
-        {isMagnet ? <ExternalLink size={14} /> : <Download size={14} />}
-        <span className="hidden sm:inline">{isMagnet ? 'Open Magnet' : 'Download'}</span>
-      </button>
+      {/* Progress bar for server download */}
+      {serverDownloading && serverProgress !== null && (
+        <div className="w-full">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-white/40 text-xs">Downloading on server…</span>
+            <span className="text-violet-400 text-xs font-mono">{serverProgress.toFixed(1)}%</span>
+          </div>
+          <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-violet-500 rounded-full transition-all duration-500"
+              style={{ width: `${serverProgress}%` }}
+            />
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 }
