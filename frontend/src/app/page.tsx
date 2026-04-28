@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import FrostedNavbar from "@/components/ui/FrostedNavbar";
 import ContentRow from "@/components/media/ContentRow";
@@ -14,6 +14,7 @@ import { GENRES } from '@/lib/constants';
 import { useTelemetryFlush } from '@/hooks/useTelemetryFlush';
 import { useKeepAlive } from '@/hooks/useKeepAlive';
 import { Spotlight } from '@/components/blocks/spotlight-new';
+import { useQuery } from '@tanstack/react-query';
 
 interface HomeData {
   hero: TMDBItem[];
@@ -24,7 +25,7 @@ interface HomeData {
 // ─── Single batch fetch for ALL home data ─────────────────────────────
 async function fetchHomeData(): Promise<HomeData | null> {
   try {
-    const res = await fetch('/api/home', { next: { revalidate: 60 } });
+    const res = await fetch('/api/home');
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -197,14 +198,15 @@ export default function Home() {
   useTelemetryFlush();
   useKeepAlive();
 
-  const [homeData, setHomeData] = useState<HomeData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    fetchHomeData()
-      .then(data => setHomeData(data))
-      .finally(() => setIsLoading(false));
-  }, []);
+  // BUG-7 fix: useQuery gives proper stale-while-revalidate caching.
+  // The old `next: { revalidate }` hint is silently ignored on client-side fetch().
+  const { data: homeData, isLoading } = useQuery({
+    queryKey: ['home-data'],
+    queryFn: fetchHomeData,
+    staleTime: 5 * 60 * 1000,   // 5 min — don't re-fetch on tab focus
+    gcTime: 30 * 60 * 1000,     // 30 min — keep in memory between page visits
+    refetchOnWindowFocus: false,
+  });
 
   const hero = homeData?.hero || [];
   const top10 = homeData?.top10 || [];
@@ -245,3 +247,4 @@ export default function Home() {
     </div>
   );
 }
+

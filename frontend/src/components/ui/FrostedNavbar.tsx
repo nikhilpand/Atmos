@@ -11,7 +11,8 @@ import { useAuthStore } from '@/store/useAuthStore';
 const NAV_LINKS = [
   { href: '/', label: 'Home', icon: Home },
   { href: '/genre/28?type=movie', label: 'Movies', icon: Film },
-  { href: '/genre/18?type=tv', label: 'TV Shows', icon: Tv },
+  // UX-2 fix: was /genre/18?type=tv (Drama) — now points to general TV trending
+  { href: '/genre/10759?type=tv', label: 'TV Shows', icon: Tv },
   { href: '/genre/16?type=tv', label: 'Anime', icon: Sparkles },
   { href: '/library', label: 'Drive', icon: HardDrive },
   { href: '/downloader', label: 'Download', icon: Download },
@@ -85,11 +86,13 @@ export default function FrostedNavbar() {
                 </div>
               </div>
             ) : (
+              // UX-5 fix: always visible — was `hidden sm:flex`
               <button
                 onClick={openAuthModal}
-                className="hidden sm:flex items-center justify-center px-4 h-8 rounded-full bg-white text-black font-semibold text-xs hover:bg-white/90 transition-colors"
+                className="flex items-center justify-center px-3 sm:px-4 h-8 rounded-full bg-white text-black font-semibold text-xs hover:bg-white/90 transition-colors"
               >
-                Sign In
+                <span className="hidden sm:inline">Sign In</span>
+                <User size={14} className="sm:hidden" />
               </button>
             )}
 

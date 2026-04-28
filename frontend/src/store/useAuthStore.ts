@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import type { User, Session } from '@supabase/supabase-js';
 import { useWatchStore } from './useWatchStore';
 
+
 interface AuthState {
   user: User | null;
   session: Session | null;
@@ -33,11 +34,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   closeAuthModal: () => set({ isAuthModalOpen: false }),
 
   signOut: async () => {
+    // Always clear auth state — regardless of Supabase availability
     if (supabase) {
-      await supabase.auth.signOut();
-      set({ user: null, session: null, profile: null });
-      useWatchStore.getState().clearAll(); // Clear local cache on logout
+      await supabase.auth.signOut().catch(() => { /* ignore network errors */ });
     }
+    // Only clear auth state — NOT local watch history.
+    // Watch history is user data: they may log back in and expect it to sync.
+    // Use clearAll() only from an explicit "Clear History" settings action.
+    set({ user: null, session: null, profile: null });
   },
 }));
 

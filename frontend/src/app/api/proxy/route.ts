@@ -1,21 +1,53 @@
-// ─── ATMOS V2.0 — Hardened Proxy ────────────────────────────────────
-// Edge-runtime proxy with SSRF protection, origin allowlist, and rate limiting.
+// ─── ATMOS V3.0 — Hardened Proxy ────────────────────────────────────
+// Edge-runtime proxy with strict SSRF allowlist, origin allowlist.
+// DNS-rebinding safe: uses hostname allowlist instead of IP regex.
 
 import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'edge';
 
-// ─── Security: SSRF Protection ─────────────────────────────────────
-const BLOCKED_IP_RE = /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|127\.|169\.254\.|0\.0\.0\.0|localhost)/i;
+// ─── Security: SSRF — Strict Hostname Allowlist ─────────────────────
+// Only forward requests to these trusted upstream services.
+// This prevents DNS-rebinding attacks that bypass IP regex checks.
+const ALLOWED_PROXY_HOSTNAMES = new Set([
+  // TMDB — all metadata, images
+  'api.themoviedb.org',
+  'image.tmdb.org',
+  // Streaming embed providers
+  'vidsrc.to',
+  'vidsrc.icu',
+  'vidsrc.cc',
+  'embed.su',
+  'autoembed.co',
+  'player.videasy.net',
+  'nontongo.win',
+  // Torrent APIs
+  'yts.mx',
+  'eztvx.to',
+  // Hugging Face spaces (meta/media/subs backends)
+  'nikhil1776-atmos-meta.hf.space',
+  'nikhil1776-atmos-media.hf.space',
+  'nikhil1776-atmos-subs.hf.space',
+  'nikhil1776-atmos-extractor.hf.space',
+  'nikhil1776-gdrivefwd.hf.space',
+  // @movie-web/providers targets
+  'moviesapi.club',
+  'vidplay.online',
+  'fmoviesz.to',
+  'rive.world',
+  'vidcloud.lol',
+]);
 
 function isAllowedDestination(url: string): boolean {
   try {
     const parsed = new URL(url);
-    // Block private/internal IPs
-    if (BLOCKED_IP_RE.test(parsed.hostname)) return false;
-    // Must be HTTPS in production
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
-    return true;
+    // Strict HTTPS only — never HTTP in production
+    if (parsed.protocol !== 'https:') return false;
+    // Allowlist check — exact hostname match
+    if (ALLOWED_PROXY_HOSTNAMES.has(parsed.hostname)) return true;
+    // Allow any *.hf.space subdomain (HF Spaces use dynamic names)
+    if (parsed.hostname.endsWith('.hf.space')) return true;
+    return false;
   } catch {
     return false;
   }
@@ -46,7 +78,6 @@ const ALLOWED_ORIGINS = [
 function getCorsOrigin(request: NextRequest): string {
   const origin = request.headers.get('origin') ?? '';
   if (ALLOWED_ORIGINS.includes(origin)) return origin;
-  // In development, allow any localhost
   if (origin.startsWith('http://localhost:')) return origin;
   return ALLOWED_ORIGINS[0];
 }

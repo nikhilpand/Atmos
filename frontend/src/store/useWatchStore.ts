@@ -103,17 +103,22 @@ export const useWatchStore = create<WatchState>()(
           },
         }));
 
-        // Evict oldest entries if store exceeds 500 items (prevent localStorage bloat on mobile)
+        // Evict oldest entries if store exceeds 500 items.
+        // Debounced: only runs at most once every 5 minutes to avoid O(n log n)
+        // sort on every progress tick during active playback.
         const entries = get().entries;
         const keys = Object.keys(entries);
         if (keys.length > 500) {
-          const sorted = keys.sort((a, b) => entries[a].updatedAt - entries[b].updatedAt);
-          const toRemove = sorted.slice(0, keys.length - 400);
-          set((state) => {
-            const pruned = { ...state.entries };
-            toRemove.forEach(k => delete pruned[k]);
-            return { entries: pruned };
-          });
+          const lastEviction = (get() as WatchState & { _lastEviction?: number })._lastEviction ?? 0;
+          if (Date.now() - lastEviction > 5 * 60 * 1000) {
+            const sorted = keys.sort((a, b) => entries[a].updatedAt - entries[b].updatedAt);
+            const toRemove = sorted.slice(0, keys.length - 400);
+            set((state) => {
+              const pruned = { ...state.entries };
+              toRemove.forEach(k => delete pruned[k]);
+              return { entries: pruned, _lastEviction: Date.now() } as Partial<WatchState>;
+            });
+          }
         }
 
         // Supabase Background Sync
@@ -175,13 +180,14 @@ export const useWatchStore = create<WatchState>()(
         const entries = Object.values(get().entries);
         const genreCount = new Map<number, number>();
 
-        // Only consider recent watches (last 30 days)
         const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
         for (const e of entries) {
           if (e.updatedAt < cutoff) continue;
           if (!e.genreIds) continue;
-          // Weight by progress — 90% watched = full weight, 10% = low weight
-          const weight = Math.max(0.1, e.progress / 100);
+          // Skip accidental plays (< 5% watched)
+          if (e.progress < 5) continue;
+          // Weight proportionally — 100% watched = 1.0, 50% = 0.5
+          const weight = e.progress / 100;
           for (const gid of e.genreIds) {
             genreCount.set(gid, (genreCount.get(gid) || 0) + weight);
           }

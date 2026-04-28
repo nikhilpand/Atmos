@@ -30,6 +30,19 @@ const HF_EXTRACTOR = process.env.NEXT_PUBLIC_EXTRACTOR_URL
 const sessionCache = new Map<string, { stream: ExtractedStream; ts: number }>();
 const CACHE_TTL = 2 * 60 * 60 * 1000; // 2 hours
 
+/**
+ * Safely merges two AbortSignals without relying on AbortSignal.any(),
+ * which is unavailable in older Safari and some Vercel edge runtimes.
+ */
+function mergeSignals(a: AbortSignal, b: AbortSignal): AbortController {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (a.aborted || b.aborted) { controller.abort(); return controller; }
+  a.addEventListener('abort', abort, { once: true });
+  b.addEventListener('abort', abort, { once: true });
+  return controller;
+}
+
 async function fetchStreamDirect(
   tmdbId: string,
   type: 'movie' | 'tv',
@@ -41,16 +54,18 @@ async function fetchStreamDirect(
   if (season !== undefined) params.set('season', String(season));
   if (episode !== undefined) params.set('episode', String(episode));
 
-  // 32-second client timeout (HF Space can take up to ~25s)
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 32_000);
+  // 32-second client timeout
+  const timeoutController = new AbortController();
+  const timer = setTimeout(() => timeoutController.abort(), 32_000);
+
+  // Safe cross-runtime signal merge (no AbortSignal.any)
   const merged = signal
-    ? AbortSignal.any([signal, controller.signal])
-    : controller.signal;
+    ? mergeSignals(signal, timeoutController.signal)
+    : timeoutController;
 
   try {
     const res = await fetch(`${HF_EXTRACTOR}/extract/tmdb?${params}`, {
-      signal: merged,
+      signal: merged.signal,
       headers: { Accept: 'application/json', 'User-Agent': 'Atmos/4.0' },
     });
     clearTimeout(timer);

@@ -644,6 +644,8 @@ function DownloadPageInner() {
   const [movieStreams, setMovieStreams] = useState<ExtractedStream[]>([]);
   const [movieLoading, setMovieLoading] = useState(false);
   const [batchLoading, setBatchLoading] = useState(false);
+  // BUG-8 fix: useRef guard prevents stale closures from triggering duplicate fetches
+  const isExtractingMovieRef = React.useRef(false);
 
   // Fetch title metadata
   const { data: titleData } = useQuery({
@@ -702,25 +704,32 @@ function DownloadPageInner() {
     }
   }, [tmdbId, displayTitle, year]);
 
-  // Extract ALL episodes in a season
+  // Extract ALL episodes in a season — PERF-3 fix: run in parallel batches of 4
+  // Old behavior: sequential + 500ms delay = up to 18+ min for a full season
   const extractFullSeason = useCallback(async () => {
     if (!episodes.length) return;
     setBatchLoading(true);
 
-    for (const ep of episodes) {
+    const BATCH_SIZE = 4;
+    const pending = episodes.filter(ep => {
       const key = `${ep.season_number}-${ep.episode_number}`;
-      if (episodeStreamsMap[key]?.status === 'done') continue;
-      await extractEpisode(ep.season_number, ep.episode_number);
-      // Small delay between requests to avoid rate limiting
-      await new Promise(r => setTimeout(r, 500));
+      return episodeStreamsMap[key]?.status !== 'done';
+    });
+
+    for (let i = 0; i < pending.length; i += BATCH_SIZE) {
+      const batch = pending.slice(i, i + BATCH_SIZE);
+      await Promise.allSettled(
+        batch.map(ep => extractEpisode(ep.season_number, ep.episode_number))
+      );
     }
 
     setBatchLoading(false);
   }, [episodes, episodeStreamsMap, extractEpisode]);
 
-  // Extract movie streams
+  // Extract movie streams — BUG-8 fix: useRef prevents stale closure double-fetch
   const extractMovie = useCallback(async () => {
-    if (movieLoading || movieStreams.length > 0) return;
+    if (isExtractingMovieRef.current || movieStreams.length > 0) return;
+    isExtractingMovieRef.current = true;
     setMovieLoading(true);
     try {
       const res = await fetch('/api/extract-all', {
@@ -733,9 +742,11 @@ function DownloadPageInner() {
       });
       const data = await res.json();
       setMovieStreams(data.streams || []);
-    } catch { /* ignore */ }
-    setMovieLoading(false);
-  }, [tmdbId, displayTitle, year, movieLoading, movieStreams.length]);
+    } catch { /* ignore */ } finally {
+      setMovieLoading(false);
+      isExtractingMovieRef.current = false;
+    }
+  }, [tmdbId, displayTitle, year, movieStreams.length]);
 
   // Auto-extract movie streams on load
   useEffect(() => {

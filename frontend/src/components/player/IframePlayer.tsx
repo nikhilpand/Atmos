@@ -40,11 +40,13 @@ export default function IframePlayer({
 }: IframePlayerProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  // Only show preload iframe AFTER active stream loads (saves bandwidth on mobile)
+  const [showPreload, setShowPreload] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasErrorRef = useRef(false);
   const failoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const loadStartRef = useRef<number>(Date.now()); // Track load start for latency measurement
+  const loadStartRef = useRef<number>(Date.now());
 
   const recordPerformance = useWatchStore(s => s.recordProviderPerformance);
 
@@ -60,19 +62,17 @@ export default function IframePlayer({
   useEffect(() => {
     setIsLoading(true);
     setHasError(false);
+    setShowPreload(false); // Don't preload until current provider succeeds
     hasErrorRef.current = false;
-    loadStartRef.current = Date.now(); // Reset load timer
+    loadStartRef.current = Date.now();
 
-    // Clear existing timers
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     if (failoverTimerRef.current) clearTimeout(failoverTimerRef.current);
 
-    // 6s hard timeout — if iframe hasn't loaded, auto-failover
+    // 6s hard timeout — hide spinner but keep iframe alive
     timeoutRef.current = setTimeout(() => {
-      if (hasErrorRef.current) return; // already handled
+      if (hasErrorRef.current) return;
       setIsLoading(false);
-      // Don't set error — the iframe might still be loading content internally
-      // Just hide the spinner so user sees the iframe
     }, 6000);
 
     return () => {
@@ -86,7 +86,9 @@ export default function IframePlayer({
     const PROXY_ORIGIN = 'https://atmos-proxy.nkp9450732628.workers.dev';
 
     const handleMessage = (event: MessageEvent) => {
+      // Validate origin AND source (prevents spoofing from other iframes)
       if (event.origin !== PROXY_ORIGIN) return;
+      if (event.source !== iframeRef.current?.contentWindow) return;
 
       if (event.data?.type === 'MEDIA_DATA') {
         try {
@@ -157,8 +159,9 @@ export default function IframePlayer({
   const handleIframeLoad = useCallback(() => {
     setIsLoading(false);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    // Only preload next provider AFTER current one succeeds
+    setShowPreload(true);
 
-    // Record success telemetry with measured latency
     if (tmdbId && activeProviderId) {
       const latencyMs = Date.now() - loadStartRef.current;
       recordPerformance({
@@ -170,7 +173,6 @@ export default function IframePlayer({
       });
     }
 
-    // Delayed success report to HF backend (don't block render)
     setTimeout(() => {
       if (!hasErrorRef.current) reportHealth(true);
     }, 3000);
@@ -190,25 +192,27 @@ export default function IframePlayer({
 
   return (
     <div className="relative w-full h-full bg-black">
-      {/* Main iframe — NO sandbox, loads instantly */}
+      {/* Main iframe — sandboxed to prevent ad pop-ups, XSS, clipboard theft */}
       <iframe
         ref={iframeRef}
         key={activeProviderId}
         src={activeUrl}
         className="absolute inset-0 w-full h-full border-none z-10"
         allowFullScreen
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock"
+        allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen"
         referrerPolicy="no-referrer"
         onLoad={handleIframeLoad}
         onError={handleIframeError}
         title={`Video player - ${activeProvider?.name || 'Stream'}`}
       />
 
-      {/* Preload next provider iframe (hidden, 0x0) for instant failover */}
-      {nextProvider && (
+      {/* Preload next provider — only after active stream has loaded to avoid wasting bandwidth */}
+      {showPreload && nextProvider && (
         <iframe
           src={nextProvider.url}
           className="absolute w-0 h-0 border-none opacity-0 pointer-events-none"
+          sandbox="allow-scripts allow-same-origin"
           tabIndex={-1}
           aria-hidden="true"
           title="Preload next server"
