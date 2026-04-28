@@ -10,6 +10,7 @@ on:
       - 'media_server/**'
       - 'meta_server/**'
       - 'subs_server/**'
+      - 'atmos-extractor/**'
       - '.github/workflows/deploy.yml'
 
 jobs:
@@ -48,7 +49,8 @@ jobs:
           }
 
           # Deploy each microservice
-          deploy_to_hf "hf_repo"      "nikhil1776/gdrivefwd"
-          deploy_to_hf "media_server" "nikhil1776/atmos-media"
-          deploy_to_hf "meta_server"  "nikhil1776/atmos-meta"
-          deploy_to_hf "subs_server"  "nikhil1776/atmos-subs"
+          deploy_to_hf "hf_repo"         "nikhil1776/gdrivefwd"
+          deploy_to_hf "media_server"    "nikhil1776/atmos-media"
+          deploy_to_hf "meta_server"     "nikhil1776/atmos-meta"
+          deploy_to_hf "subs_server"     "nikhil1776/atmos-subs"
+          deploy_to_hf "atmos-extractor" "nikhil1776/atmos-extractor"
