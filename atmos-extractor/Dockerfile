@@ -2,10 +2,11 @@ FROM mcr.microsoft.com/playwright/python:v1.58.0-jammy
 
 WORKDIR /app
 
-# Install curl_cffi build deps (needed for TLS fingerprinting)
+# Install curl_cffi build deps (needed for TLS fingerprinting) and libtorrent
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libcurl4-openssl-dev \
     gcc \
+    python3-libtorrent \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
