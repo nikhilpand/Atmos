@@ -12,9 +12,9 @@ import UpNextOverlay from '@/components/player/UpNextOverlay';
 import { fetchTitle, type Episode } from '@/lib/api';
 import { TMDB_IMAGE_BASE, TMDB_BACKDROP_SIZES, CONTROL_URL, META_URL } from '@/lib/constants';
 import { useWatchStore } from '@/store/useWatchStore';
-import { usePrefetchNextEpisode } from '@/hooks/usePrefetchNextEpisode';
-import { extractStream } from '@/lib/extractor';
 import { DEFAULT_PROVIDERS, buildProviderUrl, type Provider } from '@/lib/providers';
+
+
 
 // ─── Watch Page Inner (needs Suspense for useSearchParams) ──────────
 function WatchPageInner() {
@@ -102,14 +102,6 @@ function WatchPageInner() {
   const hasNextEpisode = currentSeasonData ? episode < currentSeasonData.episode_count : false;
   const hasNextSeason = validSeasons.some((s: any) => s.season_number === season + 1);
 
-  // ── Smart Prefetching (Phase 3) ──
-  usePrefetchNextEpisode({
-    tmdbId,
-    mediaType,
-    season,
-    currentEpisode: episode,
-    enabled: hasNextEpisode && mediaType === 'tv'
-  });
 
   // ── Track watch progress → Zustand store (for Continue Watching) ──
   const updateProgress = useWatchStore(s => s.updateProgress);
